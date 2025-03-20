@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import TicketList from '../../components/Tickets/TicketList';
 import TicketDetails from '../../components/Tickets/TicketDetails';
 import { fetchSectors, fetchTicketsBySectorService } from '../../services/firebaseService';
@@ -19,22 +19,23 @@ const SAPPage: React.FC = () => {
     loadSectors();
   }, []);
 
-  useEffect(() => {
-    if (selectedSector) {
-      const loadTickets = async () => {
-        try {
-          const ticketsData = await fetchTicketsBySectorService(selectedSector);
-          setTickets(ticketsData);
-        } catch (error) {
-          console.error("Failed to load tickets:", error);
-          setTickets([]);
-        }
-      };
-      loadTickets();
+  const loadTicketsForSector = useCallback(async (sector) => {
+    if (sector) {
+      try {
+        const ticketsData = await fetchTicketsBySectorService(sector);
+        setTickets(ticketsData);
+      } catch (error) {
+        console.error("Failed to load tickets:", error);
+        setTickets([]);
+      }
     } else {
       setTickets([]);
     }
-  }, [selectedSector]);
+  }, []);
+
+  useEffect(() => {
+    loadTicketsForSector(selectedSector);
+  }, [selectedSector, loadTicketsForSector]);
 
   const handleSectorChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedSector(event.target.value);
@@ -51,6 +52,11 @@ const SAPPage: React.FC = () => {
     setIsModalOpen(false);
     setSelectedTicket(null);
   };
+
+  const refreshTickets = useCallback(() => {
+    loadTicketsForSector(selectedSector);
+  }, [selectedSector, loadTicketsForSector]);
+
 
   return (
     <div>
@@ -74,14 +80,16 @@ const SAPPage: React.FC = () => {
               </select>
             </div>
           </div>
-          {tickets.length > 0 ? (
-            <TicketList tickets={tickets} onTicketSelect={handleTicketSelect} />
-          ) : (
-            <p>Aucun ticket disponible pour le secteur sélectionné.</p>
+          {/* Condition pour afficher TicketList seulement si un secteur est sélectionné */}
+          {selectedSector && (
+            <TicketList secteur={selectedSector} onTicketSelect={handleTicketSelect} />
+          )}
+          {!selectedSector && (
+            <p>Veuillez sélectionner un secteur pour afficher les tickets.</p>
           )}
         </div>
         <div>
-          {isModalOpen && <TicketDetails ticket={selectedTicket} onClose={handleCloseModal} />}
+          {isModalOpen && <TicketDetails ticket={selectedTicket} onClose={handleCloseModal} sectorId={selectedSector || ''} onTicketUpdated={refreshTickets} />}
         </div>
       </div>
     </div>

@@ -108,15 +108,16 @@ export const updateTicketStatus = async (sectorId: string, ticketId: string, sta
 export const fetchTickets = async () => fetchCollection('tickets'); // This might not be used anymore, use fetchTicketsBySector instead
 export const fetchTicket = async (ticketId: string) => fetchDocument('tickets', ticketId); // Consider if this is still relevant
 export const addTicket = async (ticketData: any) => addDocument('tickets', ticketData); // Consider where to add tickets, likely under a sector
-export const updateTicket = async (ticketId: string, ticketData: any) => updateDocument('tickets', ticketId, ticketData); // Consider if this is still relevant
+export const updateTicket = async (sectorId: string, ticketId: string, ticketData: any) => {
+  try {
+    const ticketDocRef = doc(db, sectorId, ticketId);
+    await updateDoc(ticketDocRef, ticketData);
+  } catch (error) {
+    console.error("Error updating ticket:", error);
+    throw error;
+  }
+};
 export const deleteTicket = async (ticketId: string) => deleteDocument('tickets', ticketId); // Consider if this is still relevant
-
-// Example for users:
-export const fetchUsers = async () => fetchCollection('users');
-export const fetchUser = async (userId: string) => fetchDocument('users', userId);
-export const addUser = async (userData: any) => addDocument('users', userData);
-export const updateUser = async (userId: string, userData: any) => updateDocument('users', userId, userData);
-export const deleteUser = async (userId: string) => deleteDocument('users', userId);
 
 export const fetchTicketsBySectorService = async (secteur: string) => {
   try {
