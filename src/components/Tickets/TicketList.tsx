@@ -41,10 +41,24 @@ const TicketList: React.FC<TicketListProps> = ({ secteur, onTicketSelect }) => {
   }
 
   if (error) {
-    return <div className="alert alert-error">
-      <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-      <span>{error}</span>
-    </div>;
+    return (
+      <div className="alert alert-error">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="stroke-current shrink-0 h-6 w-6"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
+        </svg>
+        <span>{error}</span>
+      </div>
+    );
   }
 
   const getStatusClassName = (statut: string) => {
@@ -82,31 +96,30 @@ const TicketList: React.FC<TicketListProps> = ({ secteur, onTicketSelect }) => {
       {tickets.length === 0 && secteur && !loading && !error ? (
         <p>Aucun ticket disponible pour le secteur sélectionné.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Raison Sociale</th>
-                <th>Numéro SAP</th>
-                <th>Date</th>
-                <th>Statut</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tickets.map(ticket => (
-                <tr key={ticket.id} onClick={() => onTicketSelect(ticket)} className="hover:bg-gray-100 cursor-pointer">
-                  <td>{ticket.raisonSociale}</td>
-                  <td>{ticket.numeroSAP}</td>
-                  <td>{ticket.date}</td>
-                  <td>
-                    <div className={`rounded-full px-3 py-1 font-semibold text-sm text-center ${getStatusClassName(ticket.statut)}`}>
-                      {getStatusText(ticket.statut)}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div>
+          {tickets.map((ticket) => (
+            <div
+              key={ticket.id}
+              onClick={() => onTicketSelect(ticket)}
+              className="card w-full bg-base-100 shadow-xl cursor-pointer mb-4"
+            >
+              <div className="card-body">
+                <h2 className="card-title">{ticket.raisonSociale}</h2>
+                <p><b>Numéro SAP:</b> {ticket.numeroSAP}</p>
+                <p><b>Code Client:</b> {ticket.codeClient}</p>
+                <p><b>Adresse:</b> {ticket.adresse}</p>
+                <p><b>Téléphone:</b> {ticket.telephone}</p>
+                <p><b>Date:</b> {ticket.date}</p>
+                <div className="card-actions justify-end">
+                  <div
+                    className={`badge ${getStatusClassName(ticket.statut)}`}
+                  >
+                    {getStatusText(ticket.statut)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

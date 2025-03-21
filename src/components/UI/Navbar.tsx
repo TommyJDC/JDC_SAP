@@ -4,14 +4,14 @@ import { useLocation } from 'react-router-dom';
 import { signOut, getAuth } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { useUserSectors } from '../../context/UserContext'; // Import useUserSectors hook
-
+import { useUserSectors } from '../../context/UserContext';
+import { FaChartBar, FaBox, FaSitemap, FaUser, FaSignOutAlt, FaSignInAlt } from 'react-icons/fa';
 
 const Navbar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [user, setUser] = useState<any>(null);
-  const { userSectors, loadingSectors, errorSectors } = useUserSectors(); // Use UserContext
+  const { userSectors, loadingSectors, errorSectors } = useUserSectors();
 
   useEffect(() => {
     const authInstance = getAuth();
@@ -22,7 +22,6 @@ const Navbar: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-
   const handleLogout = async () => {
     try {
       await signOut(getAuth());
@@ -32,32 +31,41 @@ const Navbar: React.FC = () => {
     }
   };
 
-
   const isActive = (path: string) => {
     return location.pathname === path ? 'active' : '';
   };
 
   return (
-    <div className="navbar bg-base-100 shadow-md">
-      <div className="flex-1">
-        <Link to="/" className="btn btn-ghost normal-case text-xl">JDC SAP</Link>
-      </div>
-      <div className="flex-none">
-        <ul className="menu menu-horizontal px-1">
-          <li><Link to="/dashboard" className={isActive('/dashboard')}>Dashboard</Link></li>
-          <li><Link to="/envois" className={isActive('/envois')}>Envois</Link></li>
-          <li><Link to="/sap" className={isActive('/sap')}>SAP</Link></li>
+    <nav className="bg-gray-800 shadow-md py-4">
+      <div className="container mx-auto flex items-center justify-between px-4">
+        <Link to="/" className="text-2xl font-bold text-white hover:text-blue-300 transition duration-200">JDC SAP <span className="emoticon">🚀</span></Link>
+        <ul className="flex space-x-6">
+          <li><Link to="/dashboard" className={`btn btn-ghost ${isActive('/dashboard')}`}>
+            <FaChartBar className="icon" /> Dashboard
+          </Link></li>
+          <li><Link to="/envois" className={`btn btn-ghost ${isActive('/envois')}`}>
+            <FaBox className="icon" /> Envois
+          </Link></li>
+          <li><Link to="/sap" className={`btn btn-ghost ${isActive('/sap')}`}>
+            <FaSitemap className="icon" /> SAP
+          </Link></li>
           {user && (
-            <li><Link to="/admin" className={isActive('/admin')}>Admin</Link></li>
+            <li><Link to="/admin" className={`btn btn-ghost ${isActive('/admin')}`}>
+              <FaUser className="icon" /> Admin
+            </Link></li>
           )}
           {user ? (
-            <li><button className="btn btn-ghost" onClick={handleLogout}>Logout</button></li>
+            <li><button className="btn btn-ghost" onClick={handleLogout}>
+              <FaSignOutAlt className="icon" /> Logout
+            </button></li>
           ) : (
-            <li><Link to="/auth" className={isActive('/auth')}>Login</Link></li>
+            <li><Link to="/auth" className={`btn btn-ghost ${isActive('/auth')}`}>
+              <FaSignInAlt className="icon" /> Login
+            </Link></li>
           )}
         </ul>
       </div>
-    </div>
+    </nav>
   );
 };
 

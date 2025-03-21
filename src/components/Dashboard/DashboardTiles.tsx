@@ -1,6 +1,7 @@
 import React from 'react';
 import { Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
+import { FaBuilding } from 'react-icons/fa';
 
 ChartJS.register(
   CategoryScale,
@@ -25,12 +26,14 @@ const DashboardTiles: React.FC<DashboardTilesProps> = ({ sectorName, enCoursTick
       {
         label: 'En cours',
         data: [enCoursTickets],
-        backgroundColor: 'rgb(255, 99, 132)',
+        backgroundColor: '#f56565', // Red
+        hoverBackgroundColor: '#ed8936',
       },
       {
         label: 'À clôturer',
         data: [aCloturerTickets],
-        backgroundColor: 'rgb(54, 162, 235)',
+        backgroundColor: '#63b3ed', // Blue
+        hoverBackgroundColor: '#4299e1',
       },
     ],
   };
@@ -42,31 +45,35 @@ const DashboardTiles: React.FC<DashboardTilesProps> = ({ sectorName, enCoursTick
         position: 'top' as const,
       },
       title: {
-        display: false, // No title for the chart itself, tile has the title
+        display: false,
         text: `Tickets par statut pour ${sectorName}`,
       },
     },
     scales: {
       y: {
         beginAtZero: true,
+        ticks: {
+          precision: 0,
+        },
       },
     },
   };
 
-
   return (
-    <div className="card bg-base-100 shadow-xl">
-      <div className="card-body">
-        <h2 className="card-title">{sectorName}</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+    <div className="dashboard-tile">
+      <div className="card-body p-6">
+        <h2 className="card-title text-xl font-semibold text-white mb-2">
+          <FaBuilding className="icon" /> {sectorName}
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <p>En cours: {enCoursTickets} tickets</p>
+            <p className="text-white">En cours: <span className="font-medium">{enCoursTickets}</span></p>
           </div>
           <div>
-            <p>À clôturer: {aCloturerTickets} tickets</p>
+            <p className="text-white">À clôturer: <span className="font-medium">{aCloturerTickets}</span></p>
           </div>
           <div>
-            <p>Total: {totalTickets} tickets</p>
+            <p className="text-white">Total: <span className="font-medium">{totalTickets}</span></p>
           </div>
         </div>
         <div className="mt-4">

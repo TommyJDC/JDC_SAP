@@ -1,19 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import DashboardTiles from '../../components/Dashboard/DashboardTiles';
 import InteractiveMap from '../../components/Dashboard/InteractiveMap';
-import { getDocs, collection } from 'firebase/firestore';
-import { db } from '../../config/firebase';
 import { fetchSectors, fetchTicketsBySector } from '../../services/firebaseService';
-import { useUserSectors } from '../../context/UserContext'; // Import UserSectors context
+import { useUserSectors } from '../../context/UserContext';
+import { FaHome, FaMapMarkedAlt, FaFilter } from 'react-icons/fa';
 
 const DashboardPage: React.FC = () => {
   const [tickets, setTickets] = useState<any[]>([]);
   const [sectors, setSectors] = useState<any[]>([]);
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [sectorTicketCounts, setSectorTicketCounts] = useState<{ [sectorId: string]: any }>({});
-  const { userSectors, loadingSectors, errorSectors } = useUserSectors(); // Use user sectors from context
-  const [filteredSectors, setFilteredSectors] = useState<any[]>([]); // Sectors filtered by user roles
-
+  const { userSectors, loadingSectors, errorSectors } = useUserSectors();
+  const [filteredSectors, setFilteredSectors] = useState<any[]>([]);
 
   useEffect(() => {
     const loadSectors = async () => {
@@ -24,22 +22,20 @@ const DashboardPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Filter sectors based on userSectors from context
     if (userSectors) {
       const filtered = sectors.filter(sector => userSectors.includes(sector.id));
       setFilteredSectors(filtered);
     } else {
-      setFilteredSectors(sectors); // If no userSectors, show all sectors (or handle as needed)
+      setFilteredSectors(sectors);
     }
   }, [sectors, userSectors]);
-
 
   useEffect(() => {
     const fetchAllTickets = async () => {
       let allTickets: any[] = [];
       let countsBySector: { [sectorId: string]: any } = {};
 
-      const sectorsToUse = userSectors ? filteredSectors : sectors; // Use filtered sectors if userSectors exist
+      const sectorsToUse = userSectors ? filteredSectors : sectors;
 
       for (const sector of sectorsToUse) {
         try {
@@ -77,14 +73,16 @@ const DashboardPage: React.FC = () => {
     ? tickets.filter(ticket => ticket.secteur === selectedSector)
     : tickets;
 
-
   return (
-    <div>
-      <h2 className="text-2xl font-bold mb-4">Tableau de bord</h2>
-      <div className="mb-4">
+    <div className="container mx-auto py-8 fade-in">
+      <h2 className="text-3xl font-bold text-white mb-6">
+        <FaHome className="icon" /> Tableau de bord
+      </h2>
+
+      <div className="mb-6">
         <div className="form-control w-full max-w-xs">
           <label className="label">
-            <span className="label-text">Secteur</span>
+            <span className="label-text text-white"><FaFilter className="icon" /> Secteur</span>
           </label>
           <select
             className="select select-bordered"
@@ -92,20 +90,15 @@ const DashboardPage: React.FC = () => {
             onChange={handleSectorChange}
           >
             <option disabled value="">Tous les secteurs</option>
-            {filteredSectors.map(sector => ( // Use filteredSectors here
+            {filteredSectors.map(sector => (
               <option key={sector.id} value={sector.id}>{sector.id}</option>
             ))}
           </select>
         </div>
       </div>
 
-      <div className="mt-8">
-        <h3 className="text-xl font-bold mb-2">Carte des tickets ouverts</h3>
-        <InteractiveMap tickets={filteredTickets} />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 mt-4">
-        {filteredSectors.map(sector => ( // Use filteredSectors here
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {filteredSectors.map(sector => (
           <DashboardTiles
             key={sector.id}
             sectorName={sector.id}
@@ -114,6 +107,13 @@ const DashboardPage: React.FC = () => {
             totalTickets={sectorTicketCounts[sector.id]?.totalTickets || 0}
           />
         ))}
+      </div>
+
+      <div className="mt-8">
+        <h3 className="text-xl font-bold text-white mb-2">
+          <FaMapMarkedAlt className="icon" /> Carte des tickets ouverts
+        </h3>
+        <InteractiveMap tickets={filteredTickets} />
       </div>
     </div>
   );
