@@ -85,7 +85,7 @@ export const fetchTicketsBySector = async (sectorId: string) => {
   try {
     const ticketsCollection = collection(db, sectorId); // Use sectorId directly as collection name
     const ticketsSnapshot = await getDocs(ticketsCollection);
-    return ticketsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    return ticketsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() , secteur: sectorId }));
   } catch (error) {
     console.error(`Error fetching tickets for sector ${sectorId}:`, error);
     throw error;
@@ -124,6 +124,51 @@ export const fetchTicketsBySectorService = async (secteur: string) => {
     return await fetchTicketsBySector(secteur);
   } catch (error) {
     console.error("Error fetching tickets by sector:", error);
+    throw error;
+  }
+};
+
+// Function to fetch geocode from Firestore
+export const fetchGeocode = async (address: string) => {
+  try {
+    const geocodesCollection = collection(db, 'geocodes');
+    const q = query(geocodesCollection, where("address", "==", address));
+    const querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
+      const doc = querySnapshot.docs[0];
+      return doc.data() as { latitude: number, longitude: number };
+    } else {
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching geocode from Firestore:", error);
+    return null;
+  }
+};
+
+// Function to store geocode in Firestore
+export const storeGeocode = async (address: string, latitude: number, longitude: number) => {
+  console.log(`Storing geocode for address: ${address} with coordinates: ${latitude}, ${longitude}`); // Log start of storeGeocode
+  try {
+    const geocodesCollection = collection(db, 'geocodes');
+    await addDoc(geocodesCollection, {
+      address: address,
+      latitude: latitude,
+      longitude: longitude,
+      timestamp: new Date() // Optional: Add timestamp for cache invalidation
+    });
+    console.log(`Geocode successfully stored for address: ${address}`); // Log success
+  } catch (error) {
+    console.error("Error storing geocode in Firestore:", error); // Log error if any
+  }
+};
+
+// Function to fetch users from Firestore
+export const fetchUsers = async () => {
+  try {
+    return await fetchCollection('users'); // Assuming 'users' is the name of your users collection
+  } catch (error) {
+    console.error("Error fetching users:", error);
     throw error;
   }
 };
