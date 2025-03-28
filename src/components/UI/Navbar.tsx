@@ -1,115 +1,116 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
-import { useLocation } from 'react-router-dom';
-import { signOut, getAuth } from 'firebase/auth';
+import { Link, NavLink } from 'react-router-dom'; // Use NavLink for active styling
+import { signOut, getAuth, onAuthStateChanged, User } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { useUserSectors } from '../../context/UserContext';
-import { FaChartBar, FaBox, FaSitemap, FaUser, FaSignOutAlt, FaSignInAlt } from 'react-icons/fa';
+import { FaChartBar, FaBox, FaSitemap, FaUserCog, FaSignOutAlt, FaSignInAlt, FaRocket } from 'react-icons/fa'; // Changed Admin icon
 
 const Navbar: React.FC = () => {
-  const location = useLocation();
   const navigate = useNavigate();
-  const [user, setUser] = useState<any>(null);
-  const { userSectors, loadingSectors, errorSectors } = useUserSectors();
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true); // Add loading state
 
   useEffect(() => {
     const authInstance = getAuth();
-    const unsubscribe = authInstance.onAuthStateChanged((currentUser) => {
+    const unsubscribe = onAuthStateChanged(authInstance, (currentUser) => {
       setUser(currentUser);
+      setLoading(false); // Set loading to false once auth state is determined
     });
 
+    // Cleanup subscription on unmount
     return () => unsubscribe();
   }, []);
 
   const handleLogout = async () => {
     try {
       await signOut(getAuth());
-      navigate('/auth');
+      navigate('/auth'); // Redirect to login page after logout
     } catch (error) {
       console.error('Logout error:', error);
+      // Optionally show an error message to the user
     }
   };
 
-  const isActive = (path: string) => {
-    return location.pathname === path ? 'active' : '';
-  };
-
-  if (loadingSectors) {
-    return (
-      <nav className="bg-gray-800 shadow-md py-4">
-        <div className="container mx-auto flex items-center justify-between px-4">
-          <div className="text-2xl font-bold text-white">
-            JDC SAP <span className="emoticon">🚀</span>
-          </div>
-          <div>Loading...</div> {/* Display a loading message */}
-        </div>
-      </nav>
-    );
-  }
-
-  if (errorSectors) {
-    return (
-      <nav className="bg-gray-800 shadow-md py-4">
-        <div className="container mx-auto flex items-center justify-between px-4">
-          <div className="text-2xl font-bold text-white">
-            JDC SAP <span className="emoticon">🚀</span>
-          </div>
-          <div>Error: {errorSectors}</div> {/* Display an error message */}
-        </div>
-      </nav>
-    );
-  }
+  // Helper function for NavLink className
+  const getNavLinkClass = ({ isActive }: { isActive: boolean }) =>
+    `btn btn-ghost ${isActive ? 'active' : ''}`;
 
   return (
-    <nav className="bg-gray-800 shadow-md py-4">
-      <div className="container mx-auto flex items-center justify-between px-4">
-        <Link to="/" className="text-2xl font-bold text-white hover:text-blue-300 transition duration-200 sm:text-base"> {/* Reduced size on small screens */}
-          JDC SAP <span className="emoticon">🚀</span>
+    <nav className="navbar bg-base-200 shadow-lg mb-6 rounded-box sticky top-0 z-50"> {/* Make navbar sticky */}
+      <div className="navbar-start">
+        <Link to="/" className="btn btn-ghost text-xl text-primary hover:bg-transparent">
+          <FaRocket className="icon" /> JDC SAP
         </Link>
-        <ul className="flex space-x-6 sm:space-x-2"> {/* Reduced spacing on small screens */}
+      </div>
+      <div className="navbar-center hidden lg:flex"> {/* Center links on larger screens */}
+        <ul className="menu menu-horizontal px-1">
           <li>
-            <Link to="/dashboard" className={`btn btn-ghost ${isActive('/dashboard')}`}>
-              <FaChartBar className="icon sm:w-5 sm:h-5" /> {/* Reduced icon size on small screens */}
-              <span className="hidden sm:inline">Dashboard</span> {/* Hide text on very small screens, show on slightly larger */}
-            </Link>
+            <NavLink to="/dashboard" className={getNavLinkClass}>
+              <FaChartBar className="icon" />
+              <span>Dashboard</span>
+            </NavLink>
           </li>
           <li>
-            <Link to="/envois" className={`btn btn-ghost ${isActive('/envois')}`}>
-              <FaBox className="icon sm:w-5 sm:h-5" /> {/* Reduced icon size on small screens */}
-              <span className="hidden sm:inline">Envois</span> {/* Hide text on very small screens, show on slightly larger */}
-            </Link>
+            <NavLink to="/envois" className={getNavLinkClass}>
+              <FaBox className="icon" />
+              <span>Envois</span>
+            </NavLink>
           </li>
           <li>
-            <Link to="/sap" className={`btn btn-ghost ${isActive('/sap')}`}>
-              <FaSitemap className="icon sm:w-5 sm:h-5" /> {/* Reduced icon size on small screens */}
-              <span className="hidden sm:inline">SAP</span> {/* Hide text on very small screens, show on slightly larger */}
-            </Link>
+            <NavLink to="/sap" className={getNavLinkClass}>
+              <FaSitemap className="icon" />
+              <span>SAP</span>
+            </NavLink>
           </li>
-          {user && (
+          {!loading && user && ( // Show Admin link only if user is logged in and not loading
             <li>
-              <Link to="/admin" className={`btn btn-ghost ${isActive('/admin')}`}>
-                <FaUser className="icon sm:w-5 sm:h-5" /> {/* Reduced icon size on small screens */}
-                <span className="hidden sm:inline">Admin</span> {/* Hide text on very small screens, show on slightly larger */}
-              </Link>
-            </li>
-          )}
-          {user ? (
-            <li>
-              <button className="btn btn-ghost" onClick={handleLogout}>
-                <FaSignOutAlt className="icon sm:w-5 sm:h-5" /> {/* Reduced icon size on small screens */}
-                <span className="hidden sm:inline">Logout</span> {/* Hide text on very small screens, show on slightly larger */}
-              </button>
-            </li>
-          ) : (
-            <li>
-              <Link to="/auth" className={`btn btn-ghost ${isActive('/auth')}`}>
-                <FaSignInAlt className="icon sm:w-5 sm:h-5" /> {/* Reduced icon size on small screens */}
-                <span className="hidden sm:inline">Login</span> {/* Hide text on very small screens, show on slightly larger */}
-              </Link>
+              <NavLink to="/admin" className={getNavLinkClass}>
+                <FaUserCog className="icon" /> {/* Changed icon */}
+                <span>Admin</span>
+              </NavLink>
             </li>
           )}
         </ul>
+      </div>
+      <div className="navbar-end">
+        {loading ? (
+          <span className="loading loading-spinner loading-sm mr-4"></span> // Show spinner while loading auth state
+        ) : user ? (
+          <div className="dropdown dropdown-end">
+            <label tabIndex={0} className="btn btn-ghost btn-circle avatar">
+              <div className="w-10 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
+                {/* Placeholder for user avatar - replace with actual image if available */}
+                <span className="text-xl">{user.email?.charAt(0).toUpperCase() || '?'}</span>
+              </div>
+            </label>
+            <ul tabIndex={0} className="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-300 rounded-box w-52">
+              <li>
+                <button onClick={handleLogout} className="text-error">
+                  <FaSignOutAlt className="icon" /> Logout
+                </button>
+              </li>
+            </ul>
+          </div>
+        ) : (
+          <NavLink to="/auth" className="btn btn-ghost">
+            <FaSignInAlt className="icon" />
+            <span>Login</span>
+          </NavLink>
+        )}
+         {/* Dropdown for mobile */}
+         <div className="dropdown dropdown-end lg:hidden">
+           <label tabIndex={0} className="btn btn-ghost lg:hidden">
+             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7" /></svg>
+           </label>
+           <ul tabIndex={0} className="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-300 rounded-box w-52">
+             <li><NavLink to="/dashboard" className={({isActive}) => isActive ? 'active' : ''}><FaChartBar className="icon" />Dashboard</NavLink></li>
+             <li><NavLink to="/envois" className={({isActive}) => isActive ? 'active' : ''}><FaBox className="icon" />Envois</NavLink></li>
+             <li><NavLink to="/sap" className={({isActive}) => isActive ? 'active' : ''}><FaSitemap className="icon" />SAP</NavLink></li>
+             {!loading && user && (
+               <li><NavLink to="/admin" className={({isActive}) => isActive ? 'active' : ''}><FaUserCog className="icon" />Admin</NavLink></li>
+             )}
+           </ul>
+         </div>
       </div>
     </nav>
   );
