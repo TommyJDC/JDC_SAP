@@ -7,7 +7,7 @@ interface TicketDetailsProps {
   ticket: any | null;
   onClose: () => void;
   sectorId: string;
-  onTicketUpdated: () => void;
+  onTicketUpdated: () => void; // Callback to notify parent of updates
 }
 
 // Function to determine the initial status
@@ -39,6 +39,7 @@ const TicketDetails: React.FC<TicketDetailsProps> = ({ ticket, onClose, sectorId
   const [statusUpdateError, setStatusUpdateError] = useState<string | null>(null);
   const [commentError, setCommentError] = useState<string | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null); // For summary/solution updates
+  const [isAddingComment, setIsAddingComment] = useState<boolean>(false); // Loading state for comment
 
   // --- AI Summary ---
   const summaryPrompt = useMemo(() => {
@@ -91,7 +92,8 @@ const TicketDetails: React.FC<TicketDetailsProps> = ({ ticket, onClose, sectorId
       }
     };
     saveSummary();
-  }, [generatedSummary, sectorId, ticket?.id, ticket?.summary, onTicketUpdated]); // Add ticket.summary dependency
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generatedSummary, sectorId, ticket?.id, ticket?.summary]); // Removed onTicketUpdated from deps
 
   // Save generated solution to Firebase
   useEffect(() => {
@@ -109,21 +111,25 @@ const TicketDetails: React.FC<TicketDetailsProps> = ({ ticket, onClose, sectorId
       }
     };
     saveSolution();
-  }, [generatedSolution, sectorId, ticket?.id, ticket?.solution, onTicketUpdated]); // Add ticket.solution dependency
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generatedSolution, sectorId, ticket?.id, ticket?.solution]); // Removed onTicketUpdated from deps
 
 
   // --- Handlers ---
 
   const handleAddComment = async () => {
     if (newComment.trim() && sectorId && ticket?.id) {
+      setIsAddingComment(true); // Start loading
       setCommentError(null);
       const updatedComments = [...(ticket.commentaires || []), newComment];
       try {
         await updateTicket(sectorId, ticket.id, { commentaires: updatedComments });
         setNewComment(''); // Clear input
-        onTicketUpdated(); // Refresh list
+        onTicketUpdated(); // Refresh list in parent
       } catch (error: any) {
         setCommentError(`Erreur ajout commentaire: ${error.message}`);
+      } finally {
+        setIsAddingComment(false); // Stop loading
       }
     }
   };
@@ -134,17 +140,23 @@ const TicketDetails: React.FC<TicketDetailsProps> = ({ ticket, onClose, sectorId
       setStatusUpdateError(null);
       try {
         await updateTicket(sectorId, ticket.id, { statut: currentStatus });
-        setIsUpdatingStatus(false);
-        onTicketUpdated(); // Refresh list
+        onTicketUpdated(); // Refresh list in parent
       } catch (error: any) {
         setStatusUpdateError(`Erreur MàJ statut: ${error.message}`);
+        // Optionally revert currentStatus state if update fails
+        // setCurrentStatus(ticket?.statut || 'En cours');
+      } finally {
         setIsUpdatingStatus(false);
       }
     }
   };
 
+  // Use a key derived from ticket.id to force remount on ticket change if needed,
+  // but useEffect dependency on [ticket] should handle state resets.
+  // const modalKey = ticket ? ticket.id : 'no-ticket';
+
   if (!ticket) {
-    return null;
+    return null; // Don't render anything if no ticket is selected
   }
 
   // Determine what to display (existing or newly generated)
@@ -153,13 +165,23 @@ const TicketDetails: React.FC<TicketDetailsProps> = ({ ticket, onClose, sectorId
 
 
   return (
+    // Ensure modal is rendered at the top level for correct stacking
     <div className="modal modal-open">
-      <div className="modal-box w-11/12 max-w-3xl"> {/* Wider modal */}
-        <button onClick={onClose} className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-        <h3 className="font-bold text-lg">{ticket.raisonSociale} - Ticket SAP {ticket.numeroSAP}</h3>
+      {/* Use modal-box for content */}
+      <div className="modal-box w-11/12 max-w-3xl relative"> {/* Added relative positioning */}
+        {/* Close button absolutely positioned within modal-box */}
+        <button
+            onClick={onClose}
+            className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 z-10" // Ensure button is above content
+            aria-label="Fermer" // Accessibility
+        >
+            ✕
+        </button>
+
+        <h3 className="font-bold text-lg mb-4">{ticket.raisonSociale} - Ticket SAP {ticket.numeroSAP}</h3>
 
         {/* Ticket Info Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 py-4 text-sm">
           <p><b>Code Client:</b> {ticket.codeClient || 'N/A'}</p>
           <p><b>Téléphone:</b> {ticket.telephone || 'N/A'}</p>
           <p className="md:col-span-2"><b>Adresse:</b> {ticket.adresse || 'N/A'}</p>
@@ -168,43 +190,43 @@ const TicketDetails: React.FC<TicketDetailsProps> = ({ ticket, onClose, sectorId
              <b>Statut:</b> <span className={`badge ${getStatusBadgeClass(currentStatus)}`}>{currentStatus}</span>
           </div>
         </div>
-        <hr className="my-4"/>
+        <hr className="my-3"/>
 
         {/* AI Summary Section */}
-        <div className="mb-4">
-          <h4 className="text-md font-semibold mb-2">Résumé IA</h4>
+        <div className="mb-3">
+          <h4 className="text-md font-semibold mb-1">Résumé IA</h4>
           {isSummaryLoading && <span className="loading loading-dots loading-sm"></span>}
-          {summaryError && !displaySummary && <p className="text-error text-sm">Erreur résumé: {summaryError}</p>}
+          {summaryError && !displaySummary && <p className="text-error text-xs">Erreur résumé: {summaryError}</p>}
           {displaySummary ? (
             <div className="prose prose-sm max-w-none"><ReactMarkdown>{displaySummary}</ReactMarkdown></div>
           ) : !isSummaryLoading && !summaryError ? (
-            <p className="text-sm text-gray-500 italic">Génération du résumé...</p>
+            <p className="text-xs text-gray-500 italic">Génération du résumé...</p>
           ) : null}
-           {updateError && updateError.includes("résumé") && <p className="text-error text-sm mt-1">{updateError}</p>}
+           {updateError && updateError.includes("résumé") && <p className="text-error text-xs mt-1">{updateError}</p>}
         </div>
 
         {/* AI Solution Section */}
-        <div className="mb-4">
-          <h4 className="text-md font-semibold mb-2">Solution Proposée IA</h4>
+        <div className="mb-3">
+          <h4 className="text-md font-semibold mb-1">Solution Proposée IA</h4>
           {isSolutionLoading && <span className="loading loading-dots loading-sm"></span>}
-          {solutionError && !displaySolution && <p className="text-error text-sm">Erreur solution: {solutionError}</p>}
+          {solutionError && !displaySolution && <p className="text-error text-xs">Erreur solution: {solutionError}</p>}
           {displaySolution ? (
             <div className="prose prose-sm max-w-none"><ReactMarkdown>{displaySolution}</ReactMarkdown></div>
           ) : !isSolutionLoading && !solutionError ? (
-            <p className="text-sm text-gray-500 italic">Génération de la solution...</p>
+            <p className="text-xs text-gray-500 italic">Génération de la solution...</p>
           ) : null}
-           {updateError && updateError.includes("solution") && <p className="text-error text-sm mt-1">{updateError}</p>}
+           {updateError && updateError.includes("solution") && <p className="text-error text-xs mt-1">{updateError}</p>}
         </div>
-        <hr className="my-4"/>
+        <hr className="my-3"/>
 
         {/* Original Request */}
-         <details className="mb-4">
+         <details className="mb-3">
             <summary className="cursor-pointer font-semibold text-md">Voir la demande SAP originale</summary>
-            <div className="mt-2 p-2 border rounded bg-base-200 text-sm max-h-40 overflow-y-auto">
+            <div className="mt-2 p-2 border rounded bg-base-200 text-xs max-h-32 overflow-y-auto">
               <pre className="whitespace-pre-wrap break-words">{ticket.demandeSAP || 'N/A'}</pre>
             </div>
         </details>
-        <hr className="my-4"/>
+        <hr className="my-3"/>
 
 
         {/* Status Update Section */}
@@ -233,9 +255,9 @@ const TicketDetails: React.FC<TicketDetailsProps> = ({ ticket, onClose, sectorId
         {/* Comments Section */}
         <div>
           <h4 className="text-md font-semibold mb-2">Commentaires</h4>
-          <div className="max-h-40 overflow-y-auto mb-2 border rounded p-2 bg-base-200">
+          <div className="max-h-32 overflow-y-auto mb-2 border rounded p-2 bg-base-200 text-sm">
             {ticket.commentaires && ticket.commentaires.length > 0 ? (
-              <ul className="list-disc list-inside text-sm">
+              <ul className="list-disc list-inside">
                 {ticket.commentaires.map((commentaire: string, index: number) => (
                   <li key={index}>{commentaire}</li>
                 ))}
@@ -250,16 +272,30 @@ const TicketDetails: React.FC<TicketDetailsProps> = ({ ticket, onClose, sectorId
             rows={2}
             value={newComment}
             onChange={(e) => setNewComment(e.target.value)}
+            disabled={isAddingComment} // Disable while adding
           ></textarea>
-          <button className="btn btn-secondary btn-sm mt-2" onClick={handleAddComment}>Ajouter</button>
+           <button
+              className="btn btn-secondary btn-sm mt-2"
+              onClick={handleAddComment}
+              disabled={isAddingComment || !newComment.trim()} // Disable if adding or empty
+            >
+              {isAddingComment ? <span className="loading loading-spinner loading-xs"></span> : 'Ajouter'}
+            </button>
           {commentError && <p className="text-error text-sm mt-1">{commentError}</p>}
         </div>
 
         {/* Close button at the bottom */}
+        {/* Removed the modal-action div as the close button is now absolute positioned at the top */}
+        {/*
         <div className="modal-action mt-6">
           <button onClick={onClose} className="btn">Fermer</button>
         </div>
+        */}
       </div>
+       {/* Optional: Click outside to close */}
+       <form method="dialog" className="modal-backdrop">
+            <button onClick={onClose}>close</button>
+       </form>
     </div>
   );
 };

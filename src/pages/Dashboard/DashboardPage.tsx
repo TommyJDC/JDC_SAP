@@ -1,162 +1,198 @@
-import React, { useState, useEffect } from 'react';
-    import DashboardTiles from '../../components/Dashboard/DashboardTiles';
-    import InteractiveMap from '../../components/Dashboard/InteractiveMap';
-    import { fetchSectors, fetchTicketsBySector, fetchEnvoisCount } from '../../services/firebaseService';
-    import { useUserSectors } from '../../context/UserContext';
-    import { FaHome, FaMapMarkedAlt, FaFilter } from 'react-icons/fa';
-    import { getAuth } from 'firebase/auth';
-    import useGeminiSummary from '../../hooks/useGeminiSummary';
+import React, { useState, useEffect, useRef } from 'react';
+import DashboardTiles from '../../components/Dashboard/DashboardTiles';
+import InteractiveMap from '../../components/Dashboard/InteractiveMap';
+import {
+  listenToEnvoisCount,
+  fetchSectors, // Keep fetchSectors
+  listenToTicketsBySector, // Use this for tickets
+  listenToCollection // Keep for envois data if needed elsewhere, but not for map now
+} from '../../services/firebaseService';
+import { Unsubscribe } from 'firebase/firestore';
 
-    const DashboardPage: React.FC = () => {
-      const [tickets, setTickets] = useState<any[]>([]);
-      const [sectors, setSectors] = useState<any[]>([]);
-      const [selectedSector, setSelectedSector] = useState<string | null>(null);
-      const [sectorTicketCounts, setSectorTicketCounts] = useState<{ [sectorId: string]: any }>({});
-      const { userSectors } = useUserSectors();
-      const [filteredSectors, setFilteredSectors] = useState<any[]>([]);
-      const [firstName, setFirstName] = useState('');
-      const [envoisCount, setEnvoisCount] = useState(0);
-      const [summaryPrompt, setSummaryPrompt] = useState(''); // Add state for the prompt
+// Define Envoi type (still needed for count tile)
+interface Envoi {
+  id: string;
+  adresse?: string;
+  [key: string]: any;
+}
 
-      const { summary, isLoading: isSummaryLoading, error: summaryError } = useGeminiSummary(summaryPrompt); // Pass the prompt
+// Define Ticket type for the map - Use 'adresse' (lowercase)
+interface Ticket {
+  id: string;
+  adresse?: string; // *** Field for map address (lowercase) ***
+  raisonSociale?: string; // Client name for popup
+  statut?: string; // Status for popup
+  secteur?: string; // Sector info
+  // Add other relevant Ticket fields if needed
+  [key: string]: any;
+}
 
-      useEffect(() => {
-        const auth = getAuth();
-        const user = auth.currentUser;
-        if (user && user.email) {
-          const firstNamePart = user.email.split('.')[0];
-          setFirstName(firstNamePart.charAt(0).toUpperCase() + firstNamePart.slice(1));
+const DashboardPage: React.FC = () => {
+  const [envoisCount, setEnvoisCount] = useState<number>(0);
+  const [ticketsCount, setTicketsCount] = useState<number>(0); // Still needed for tile
+  const [ticketsData, setTicketsData] = useState<Ticket[]>([]); // State for Ticket documents for the map
+  const [loadingCounts, setLoadingCounts] = useState<boolean>(true);
+  const [loadingMapData, setLoadingMapData] = useState<boolean>(true);
+  const [errorCounts, setErrorCounts] = useState<string | null>(null);
+  const [errorMapData, setErrorMapData] = useState<string | null>(null);
+
+  // Ref to store ticket listeners unsubscribe functions
+  const ticketListenersRef = useRef<Unsubscribe[]>([]);
+  // Ref to store combined tickets from all sectors temporarily
+  const allTicketsRef = useRef<Record<string, Ticket[]>>({}); // Store tickets per sector { sectorId: tickets[] }
+
+  useEffect(() => {
+    setLoadingCounts(true);
+    setLoadingMapData(true);
+    setErrorCounts(null);
+    setErrorMapData(null);
+    allTicketsRef.current = {}; // Reset temporary storage on effect run
+
+    let isMounted = true; // Flag to prevent state updates on unmounted component
+
+    // --- Listener for Envois count (for the tile) ---
+    const unsubscribeEnvoisCount = listenToEnvoisCount((count) => {
+      if (isMounted) {
+        setEnvoisCount(count);
+        // Don't set loadingCounts false here, wait for tickets count fetch
+      }
+    });
+
+    // --- Fetch Sectors and Set Up Ticket Listeners (for map and total count) ---
+    const setupTicketListeners = async () => {
+      try {
+        console.log("[DashboardPage] Fetching sectors...");
+        const sectors = await fetchSectors();
+        if (!isMounted) return; // Check mount status after async operation
+        console.log(`[DashboardPage] Fetched ${sectors.length} sectors. Setting up listeners...`);
+
+        let initialTotalTickets = 0;
+        const listeners: Unsubscribe[] = [];
+        allTicketsRef.current = {}; // Initialize/clear ticket storage
+
+        if (sectors.length === 0) {
+            console.warn("[DashboardPage] No sectors found. Map data will likely be empty.");
+            setLoadingMapData(false); // Stop loading if no sectors
         }
-      }, []);
 
-      useEffect(() => {
-        const loadSectors = async () => {
-          const sectorsData = await fetchSectors();
-          setSectors(sectorsData);
-        };
-        loadSectors();
-      }, []);
+        sectors.forEach(sector => {
+          const sectorId = sector.id;
+          allTicketsRef.current[sectorId] = []; // Initialize array for sector
+          console.log(`[DashboardPage] Setting up listener for sector: ${sectorId}`);
 
-      useEffect(() => {
-        if (userSectors) {
-          const filtered = sectors.filter(sector => userSectors.includes(sector.id));
-          setFilteredSectors(filtered);
-        } else {
-          setFilteredSectors(sectors);
-        }
-      }, [sectors, userSectors]);
+          const unsubscribe = listenToTicketsBySector(sectorId, (sectorTickets) => {
+            if (isMounted) {
+              console.log(`[DashboardPage] Received ${sectorTickets.length} tickets for sector: ${sectorId}`);
+              // Store tickets for this sector
+              allTicketsRef.current[sectorId] = sectorTickets as Ticket[]; // Assume fetched data matches Ticket interface
 
-      useEffect(() => {
-        const fetchData = async () => {
-          let allTickets: any[] = [];
-          let countsBySector: { [sectorId: string]: any } = {};
-          let totalEnvois = 0;
+              // Combine tickets from all sectors
+              let combinedTickets: Ticket[] = [];
+              let currentTotalTickets = 0;
+              Object.values(allTicketsRef.current).forEach(tickets => {
+                combinedTickets = combinedTickets.concat(tickets);
+                currentTotalTickets += tickets.length;
+              });
 
-          const sectorsToUse = userSectors ? filteredSectors : sectors;
+              // *** Log combined tickets before setting state (keep for debugging if needed) ***
+              // console.log(`[DashboardPage] Combined tickets from all sectors before setting state (Total: ${currentTotalTickets}):`, JSON.stringify(combinedTickets, null, 2));
 
-          for (const sector of sectorsToUse) {
-            try {
-              const ticketsForSector = await fetchTicketsBySector(sector.id);
-              allTickets = [...allTickets, ...ticketsForSector];
+              console.log(`[DashboardPage] Updating state. Total tickets: ${currentTotalTickets}, Combined tickets for map:`, combinedTickets.length); // Log length instead of full object
+              // Update state
+              setTicketsData(combinedTickets); // Update map data
+              setTicketsCount(currentTotalTickets); // Update total count tile
 
-              countsBySector[sector.id] = {
-                enCoursTickets: ticketsForSector.filter(ticket => ticket.statut === 'en cours').length,
-                aCloturerTickets: ticketsForSector.filter(ticket => ticket.statut === 'À clôturer').length,
-                totalTickets: ticketsForSector.length,
-              };
-            } catch (error) {
-              console.error(`Error fetching tickets for sector ${sector.id}:`, error);
-              countsBySector[sector.id] = {
-                enCoursTickets: 0,
-                aCloturerTickets: 0,
-                totalTickets: 0,
-              };
+              // Consider map loading finished when first batch of tickets arrive (even if empty)
+              if (loadingMapData) {
+                  console.log("[DashboardPage] Setting loadingMapData to false.");
+                  setLoadingMapData(false);
+              }
+              setErrorMapData(null); // Clear error if data arrives
+            } else {
+               console.log(`[DashboardPage] Listener update for sector ${sectorId} ignored (component unmounted).`);
             }
-          }
+          }, (error) => { // Add error handler for listener
+             console.error(`[DashboardPage] Error listening to tickets for sector ${sectorId}:`, error);
+             if(isMounted) {
+                setErrorMapData(prev => prev ? `${prev}, Erreur secteur ${sectorId}` : `Erreur secteur ${sectorId}`);
+                // Maybe remove tickets for this sector if listener fails?
+                // allTicketsRef.current[sectorId] = [];
+                // // Re-combine and update state
+                // let combinedTickets: Ticket[] = [];
+                // let currentTotalTickets = 0;
+                // Object.values(allTicketsRef.current).forEach(tickets => {
+                //   combinedTickets = combinedTickets.concat(tickets);
+                //   currentTotalTickets += tickets.length;
+                // });
+                // setTicketsData(combinedTickets);
+                // setTicketsCount(currentTotalTickets);
+             }
+          });
+          listeners.push(unsubscribe);
+        });
 
-          try {
-            totalEnvois = await fetchEnvoisCount();
-            setEnvoisCount(totalEnvois);
-          } catch (envoisError) {
-            console.error("Error fetching envois count:", envoisError);
-          }
+        ticketListenersRef.current = listeners; // Store unsubscribe functions
 
-          setTickets(allTickets);
-          setSectorTicketCounts(countsBySector);
+        // Set loading counts false after listeners are set up
+        setLoadingCounts(false);
 
-          // Construct the prompt for Gemini
-          let prompt = `Voici les données actuelles: `;
-          for (const sector of sectorsToUse) {
-            prompt += `Secteur ${sector.id}: ${countsBySector[sector.id].totalTickets} tickets au total (${countsBySector[sector.id].enCoursTickets} en cours, ${countsBySector[sector.id].aCloturerTickets} à clôturer). `;
-          }
-          prompt += `Il y a ${totalEnvois} envois au total. Donne un résumé très court (maximum 2 phrases) de l'état global.`;
-          setSummaryPrompt(prompt); // Set the prompt in state
-
-        };
-
-        if (sectors.length > 0) {
-          fetchData();
+      } catch (err) {
+        console.error("[DashboardPage] Error fetching sectors or setting up ticket listeners:", err);
+        if (isMounted) {
+          setErrorCounts('Erreur chargement secteurs/tickets.');
+          setErrorMapData('Erreur chargement données carte.');
+          setLoadingCounts(false);
+          setLoadingMapData(false);
         }
-      }, [sectors, filteredSectors, userSectors]);
-
-      const handleSectorChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-        setSelectedSector(event.target.value);
-      };
-
-      const filteredTickets = selectedSector
-        ? tickets.filter(ticket => ticket.secteur === selectedSector)
-        : tickets;
-
-      return (
-        <div className="container mx-auto py-8 fade-in">
-          {/* Greeting */}
-          <h2 className="text-3xl font-bold text-white mb-2">
-            <FaHome className="icon" /> Bonjour {firstName}!
-          </h2>
-
-          {/* Summary */}
-          {isSummaryLoading && <p className="text-white">Génération du résumé...</p>}
-          {summaryError && <p className="text-red-500">Erreur lors de la génération du résumé: {summaryError}</p>}
-          {summary && <p className="text-white mb-4 p-4 bg-gray-700 rounded-lg">{summary}</p>}
-
-          <div className="mb-6">
-            <div className="form-control w-full max-w-xs">
-              <label className="label">
-                <span className="label-text text-white"><FaFilter className="icon" /> Secteur</span>
-              </label>
-              <select
-                className="select select-bordered"
-                value={selectedSector || ''}
-                onChange={handleSectorChange}
-              >
-                <option disabled value="">Tous les secteurs</option>
-                {filteredSectors.map(sector => (
-                  <option key={sector.id} value={sector.id}>{sector.id}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredSectors.map(sector => (
-              <DashboardTiles
-                key={sector.id}
-                sectorName={sector.id}
-                enCoursTickets={sectorTicketCounts[sector.id]?.enCoursTickets || 0}
-                aCloturerTickets={sectorTicketCounts[sector.id]?.aCloturerTickets || 0}
-                totalTickets={sectorTicketCounts[sector.id]?.totalTickets || 0}
-              />
-            ))}
-          </div>
-
-          <div className="mt-8">
-            <h3 className="text-xl font-bold text-white mb-2">
-              <FaMapMarkedAlt className="icon" /> Carte des tickets ouverts
-            </h3>
-            <InteractiveMap tickets={filteredTickets} />
-          </div>
-        </div>
-      );
+      }
     };
 
-    export default DashboardPage;
+    setupTicketListeners();
+
+    // --- Cleanup listeners on unmount ---
+    return () => {
+      isMounted = false;
+      unsubscribeEnvoisCount();
+      // Unsubscribe from all ticket listeners
+      console.log(`[DashboardPage] Cleaning up ${ticketListenersRef.current.length} ticket listeners.`);
+      ticketListenersRef.current.forEach(unsubscribe => unsubscribe());
+      ticketListenersRef.current = []; // Clear the array
+      console.log('[DashboardPage] Dashboard listeners cleaned up.');
+    };
+  }, []); // Run only once on mount
+
+  console.log("[DashboardPage] Rendering. LoadingMapData:", loadingMapData, "ErrorMapData:", errorMapData, "TicketsData length:", ticketsData.length);
+
+  return (
+    <div className="space-y-6">
+      <h1 className="text-3xl font-bold mb-4">Tableau de Bord</h1>
+
+      {/* Dashboard Tiles */}
+      <DashboardTiles
+        envoisCount={envoisCount}
+        ticketsCount={ticketsCount} // Pass the real-time total tickets count
+        loading={loadingCounts}
+        error={errorCounts}
+      />
+
+      {/* Interactive Map - Now uses ticketsData */}
+      <div className="card bg-base-100 shadow-xl">
+        <div className="card-body">
+          <h2 className="card-title">Carte Interactive des Tickets SAP</h2>
+          {loadingMapData && <div className="flex justify-center items-center h-64"><span className="loading loading-spinner loading-lg"></span><p className="ml-2">Chargement des données de la carte...</p></div>}
+          {errorMapData && <div className="text-error text-center p-4">Erreur lors du chargement des données de la carte: {errorMapData}</div>}
+          {!loadingMapData && !errorMapData && (
+            // Pass ticketsData to the map component
+            <InteractiveMap tickets={ticketsData} />
+          )}
+           {/* Add message if no tickets */}
+           {!loadingMapData && !errorMapData && ticketsData.length === 0 && (
+             <div className="text-center p-4 text-gray-500">Aucun ticket avec une adresse à afficher sur la carte.</div>
+           )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default DashboardPage;

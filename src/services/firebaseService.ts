@@ -1,6 +1,7 @@
 import { db } from '../config/firebase';
-import { collection, getDocs, doc, getDoc, addDoc, updateDoc, deleteDoc, query, where, getCountFromServer, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, addDoc, updateDoc, deleteDoc, query, where, getCountFromServer, onSnapshot, Unsubscribe } from 'firebase/firestore'; // Import Unsubscribe
 
+// --- Existing Functions (fetchCollection, fetchDocument, addDocument, updateDocument, deleteDocument, fetchSectors) ---
 // Generic function to fetch all documents from a collection
 export const fetchCollection = async (collectionName: string) => {
   try {
@@ -99,7 +100,100 @@ export const fetchSectors = async () => {
   }
 };
 
-// Function to fetch tickets by sector (UPDATED LOGIC)
+// --- Real-time Listener Functions ---
+
+/**
+ * Listens for real-time updates on a specific collection.
+ * @param collectionName The name of the collection to listen to.
+ * @param callback Function to call with the updated data array.
+ * @returns An unsubscribe function to stop the listener.
+ */
+export const listenToCollection = (collectionName: string, callback: (data: any[]) => void): Unsubscribe => {
+  const q = query(collection(db, collectionName));
+  const unsubscribe = onSnapshot(q, (querySnapshot) => {
+    const documents = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(documents);
+  }, (error) => {
+    console.error(`Error listening to collection ${collectionName}:`, error);
+    // Optionally, inform the user or trigger specific error handling in the callback
+    callback([]); // Send empty array on error or handle differently
+  });
+  return unsubscribe;
+};
+
+
+/**
+ * Listens for real-time updates on tickets within a specific sector (collection).
+ * Includes logic to correct 'statut' based on 'demandeSAP'.
+ * @param sectorId The sector ID (collection name) to listen to.
+ * @param callback Function to call with the updated tickets array.
+ * @returns An unsubscribe function to stop the listener.
+ */
+export const listenToTicketsBySector = (sectorId: string, callback: (tickets: any[]) => void): Unsubscribe => {
+  const ticketsCollection = collection(db, sectorId);
+  const unsubscribe = onSnapshot(ticketsCollection, (querySnapshot) => {
+    const tickets: any[] = [];
+    const updatePromises: Promise<void>[] = []; // Store update promises
+
+    console.log(`[firebaseService] Received snapshot for sector ${sectorId} with ${querySnapshot.docs.length} docs.`); // *** ADDED LOG ***
+
+    querySnapshot.docs.forEach((docSnap) => {
+      const ticketData = docSnap.data();
+      // *** ADDED DETAILED LOG for each ticket ***
+      console.log(`[firebaseService] Processing ticket ${docSnap.id} in sector ${sectorId}. Raw data:`, ticketData);
+      console.log(`[firebaseService]   >> Does it have 'Adresse'?`, ticketData.hasOwnProperty('Adresse'));
+      console.log(`[firebaseService]   >> Value of 'Adresse':`, ticketData.Adresse);
+      // *** END ADDED LOG ***
+
+      let currentStatus = ticketData.statut; // Get current status
+
+      // Check if status needs correction based on demandeSAP
+      const needsRmaStatus = ticketData.demandeSAP?.toLowerCase().includes('demande de rma');
+      const isNotRmaStatus = currentStatus !== 'Demande de RMA';
+
+      if (needsRmaStatus && isNotRmaStatus) {
+        // If demandeSAP indicates RMA but status isn't set correctly, update it
+        currentStatus = 'Demande de RMA'; // Update local status for immediate return
+        // Asynchronously update the document in Firestore (no need to await here for real-time)
+        updatePromises.push(updateDoc(docSnap.ref, { statut: currentStatus }));
+        console.log(`Updating ticket ${docSnap.id} in sector ${sectorId} to status: ${currentStatus} based on demandeSAP.`);
+      } else if (!currentStatus) {
+        // If status is missing entirely, set default and update
+        currentStatus = 'en cours'; // Default status
+        updatePromises.push(updateDoc(docSnap.ref, { statut: currentStatus }));
+        console.log(`Updating ticket ${docSnap.id} in sector ${sectorId} to default status: ${currentStatus} as it was missing.`);
+      }
+
+      tickets.push({
+        id: docSnap.id,
+        ...ticketData,
+        statut: currentStatus, // Ensure the returned ticket has the correct status
+        secteur: sectorId, // Add sector info if needed elsewhere
+      });
+    });
+
+    // Call the callback immediately with the processed tickets
+    callback(tickets);
+
+    // Handle updates in the background if any were needed
+    if (updatePromises.length > 0) {
+      Promise.all(updatePromises)
+        .then(() => console.log(`Finished background status updates for sector ${sectorId}.`))
+        .catch(err => console.error(`Error during background status updates for sector ${sectorId}:`, err));
+    }
+
+  }, (error) => {
+    console.error(`Error listening to tickets for sector ${sectorId}:`, error);
+    callback([]); // Send empty array on error
+  });
+
+  return unsubscribe;
+};
+
+
+// --- Existing Functions (fetchTicketsBySector, updateTicketStatus, etc.) ---
+
+// Function to fetch tickets by sector (ONE-TIME FETCH - kept for potential other uses)
 export const fetchTicketsBySector = async (sectorId: string) => {
   try {
     const ticketsCollection = collection(db, sectorId); // Use sectorId directly as collection name
@@ -116,14 +210,11 @@ export const fetchTicketsBySector = async (sectorId: string) => {
       const isNotRmaStatus = currentStatus !== 'Demande de RMA';
 
       if (needsRmaStatus && isNotRmaStatus) {
-        // If demandeSAP indicates RMA but status isn't set correctly, update it
-        currentStatus = 'Demande de RMA'; // Update local status for immediate return
-        // Asynchronously update the document in Firestore
+        currentStatus = 'Demande de RMA';
         updatePromises.push(updateDoc(docSnap.ref, { statut: currentStatus }));
         console.log(`Updating ticket ${docSnap.id} in sector ${sectorId} to status: ${currentStatus} based on demandeSAP.`);
       } else if (!currentStatus) {
-        // If status is missing entirely, set default and update
-        currentStatus = 'en cours'; // Default status
+        currentStatus = 'en cours';
         updatePromises.push(updateDoc(docSnap.ref, { statut: currentStatus }));
         console.log(`Updating ticket ${docSnap.id} in sector ${sectorId} to default status: ${currentStatus} as it was missing.`);
       }
@@ -131,13 +222,11 @@ export const fetchTicketsBySector = async (sectorId: string) => {
       tickets.push({
         id: docSnap.id,
         ...ticketData,
-        statut: currentStatus, // Ensure the returned ticket has the correct status
-        secteur: sectorId, // Add sector info if needed elsewhere
+        statut: currentStatus,
+        secteur: sectorId,
       });
     }
 
-    // Wait for all potential updates to complete before returning
-    // This prevents a potential race condition where the list displays old data briefly
     await Promise.all(updatePromises);
     console.log(`Finished processing and potential updates for ${tickets.length} tickets in sector ${sectorId}.`);
 
@@ -150,7 +239,7 @@ export const fetchTicketsBySector = async (sectorId: string) => {
 };
 
 
-// Function to update ticket status (remains the same, used by TicketDetails)
+// Function to update ticket status
 export const updateTicketStatus = async (sectorId: string, ticketId: string, status: string) => {
   try {
     const ticketDocRef = doc(db, sectorId, ticketId); // Use sectorId directly as collection name
@@ -162,10 +251,9 @@ export const updateTicketStatus = async (sectorId: string, ticketId: string, sta
 };
 
 // Specific functions for tickets, users, etc. can be built using these generic functions
-// Example for tickets:
+// Example for tickets (ONE-TIME FETCH):
 export const fetchTicketsBySectorService = async (secteur: string) => {
   try {
-    // Now calls the updated fetchTicketsBySector
     return await fetchTicketsBySector(secteur);
   } catch (error) {
     console.error(`Error in fetchTicketsBySectorService for sector ${secteur}:`, error);
@@ -183,7 +271,7 @@ export const updateTicket = async (sectorId: string, ticketId: string, ticketDat
   }
 };
 
-// Function to fetch all documents from the "Envoi" collection
+// Function to fetch all documents from the "Envoi" collection (ONE-TIME FETCH)
 export const fetchEnvois = async () => {
   try {
     return await fetchCollection('Envoi'); // Fetch directly from "Envoi" collection
@@ -238,7 +326,7 @@ export const fetchUsers = async () => {
   }
 };
 
-// Function to fetch the total count of 'envois'
+// Function to fetch the total count of 'envois' (ONE-TIME FETCH)
 export const fetchEnvoisCount = async () => {
   try {
     const q = collection(db, 'Envoi'); // Count from "Envoi" collection
@@ -248,4 +336,16 @@ export const fetchEnvoisCount = async () => {
     console.error("Error fetching envois count:", error);
     throw error;
   }
+};
+
+// Function to listen to the total count of 'envois' (REAL-TIME)
+export const listenToEnvoisCount = (callback: (count: number) => void): Unsubscribe => {
+    const q = collection(db, 'Envoi');
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+        callback(snapshot.size); // Use snapshot.size for real-time count
+    }, (error) => {
+        console.error("Error listening to envois count:", error);
+        callback(0); // Return 0 on error
+    });
+    return unsubscribe;
 };

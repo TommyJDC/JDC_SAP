@@ -1,83 +1,73 @@
 import React from 'react';
-import { Bar } from 'react-chartjs-2';
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
-import { FaBuilding } from 'react-icons/fa';
-
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend
-);
+import { FaShippingFast, FaTicketAlt, FaExclamationTriangle } from 'react-icons/fa'; // Import icons
 
 interface DashboardTilesProps {
-  sectorName: string;
-  enCoursTickets: number;
-  aCloturerTickets: number;
-  totalTickets: number;
+  envoisCount: number;
+  ticketsCount: number;
+  loading: boolean;
+  error: string | null;
 }
 
-const DashboardTiles: React.FC<DashboardTilesProps> = ({ sectorName, enCoursTickets, aCloturerTickets, totalTickets }) => {
-  const chartData = {
-    labels: ['Tickets'],
-    datasets: [
-      {
-        label: 'En cours',
-        data: [enCoursTickets],
-        backgroundColor: '#f56565', // Red
-        hoverBackgroundColor: '#ed8936',
-      },
-      {
-        label: 'À clôturer',
-        data: [aCloturerTickets],
-        backgroundColor: '#63b3ed', // Blue
-        hoverBackgroundColor: '#4299e1',
-      },
-    ],
-  };
-
-  const chartOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-      title: {
-        display: false,
-        text: `Tickets par statut pour ${sectorName}`,
-      },
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        ticks: {
-          precision: 0,
-        },
-      },
-    },
-  };
-
+const DashboardTiles: React.FC<DashboardTilesProps> = ({ envoisCount, ticketsCount, loading, error }) => {
   return (
-    <div className="dashboard-tile">
-      <div className="card-body p-6">
-        <h2 className="card-title text-xl font-semibold text-white mb-2">
-          <FaBuilding className="icon" /> {sectorName}
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <p className="text-white">En cours: <span className="font-medium">{enCoursTickets}</span></p>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Envois Tile - Apply text-primary-content to inner elements */}
+      <div className="stats shadow bg-primary text-primary-content">
+        <div className="stat">
+          <div className="stat-figure text-primary-content"> {/* Ensure icon also uses contrast color */}
+            <FaShippingFast size={32} />
           </div>
-          <div>
-            <p className="text-white">À clôturer: <span className="font-medium">{aCloturerTickets}</span></p>
-          </div>
-          <div>
-            <p className="text-white">Total: <span className="font-medium">{totalTickets}</span></p>
-          </div>
+          <div className="stat-title text-primary-content">Envois Actifs</div> {/* Explicit text color */}
+          {loading ? (
+            <div className="stat-value text-primary-content"><span className="loading loading-dots loading-md"></span></div>
+          ) : error ? (
+             <div className="stat-value text-error"><FaExclamationTriangle/></div> // Error text is usually visible
+          ) : (
+            <div className="stat-value text-primary-content">{envoisCount}</div> /* Explicit text color */
+          )}
+          <div className="stat-desc text-primary-content opacity-75">Nombre total d'envois</div> {/* Explicit text color + slight opacity */}
         </div>
-        <div className="mt-4">
-          <Bar data={chartData} options={chartOptions} />
+      </div>
+
+      {/* Tickets Tile - Apply text-secondary-content to inner elements */}
+      <div className="stats shadow bg-secondary text-secondary-content">
+        <div className="stat">
+          <div className="stat-figure text-secondary-content"> {/* Ensure icon also uses contrast color */}
+            <FaTicketAlt size={32} />
+          </div>
+          <div className="stat-title text-secondary-content">Tickets SAP Ouverts</div> {/* Explicit text color */}
+           {loading ? (
+            <div className="stat-value text-secondary-content"><span className="loading loading-dots loading-md"></span></div>
+          ) : error ? (
+             <div className="stat-value text-error"><FaExclamationTriangle/></div> // Error text is usually visible
+          ) : (
+            <div className="stat-value text-secondary-content">{ticketsCount}</div> /* Explicit text color */
+          )}
+          <div className="stat-desc text-secondary-content opacity-75">Total tickets tous secteurs</div> {/* Explicit text color + slight opacity */}
+        </div>
+      </div>
+
+      {/* Placeholder Tile 1 - Apply text-accent-content to inner elements */}
+      <div className="stats shadow bg-accent text-accent-content">
+        <div className="stat">
+          {/* <div className="stat-figure text-accent-content">
+             Icon
+          </div> */}
+          <div className="stat-title text-accent-content">Autre Statistique</div> {/* Explicit text color */}
+          <div className="stat-value text-accent-content">...</div> {/* Explicit text color */}
+          <div className="stat-desc text-accent-content opacity-75">Description</div> {/* Explicit text color + slight opacity */}
+        </div>
+      </div>
+
+      {/* Placeholder Tile 2 - Apply text-base-content (or theme default) */}
+      <div className="stats shadow"> {/* No specific bg, uses default base */}
+        <div className="stat">
+          {/* <div className="stat-figure text-info"> {/* Or text-base-content */}
+             {/* Icon */}
+          {/* </div> */}
+          <div className="stat-title text-base-content">Encore une Statistique</div> {/* Explicit text color */}
+          <div className="stat-value text-base-content">...</div> {/* Explicit text color */}
+          <div className="stat-desc text-base-content opacity-75">Description</div> {/* Explicit text color + slight opacity */}
         </div>
       </div>
     </div>
