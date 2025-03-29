@@ -1,70 +1,108 @@
 import React, { useState, useEffect } from 'react';
-import TicketList from '../../components/Tickets/TicketList';
-import TicketDetails from '../../components/Tickets/TicketDetails';
-import { fetchSectors, fetchTicketsBySector } from '../../services/firebaseService';
+import EnvoiList from '../../components/Envois/EnvoiList';
+import EnvoiDetails from '../../components/Envois/EnvoiDetails';
+import { fetchSectors } from '../../services/firebaseService'; // Assuming fetchSectors can be reused or adapted
+
+// Define the Envoi type matching the data structure
+interface Envoi {
+  id: string;
+  articleNom: string;
+  bt: string;
+  codeClient: string;
+  nomClient: string;
+  secteur: string;
+  statutExpedition: string;
+  trackingLink?: string;
+}
+
+// Define Sector type (can be reused from SAPPage if available)
+interface Sector {
+  id: string;
+  // Add other properties if needed, e.g., name
+}
 
 const EnvoisPage: React.FC = () => {
-  const [selectedSector, setSelectedSector] = useState<string | null>(null);
-  const [sectors, setSectors] = useState<any[]>([]);
-  const [tickets, setTickets] = useState<any[]>([]);
-  const [selectedTicket, setSelectedTicket] = useState<any | null>(null);
+  const [selectedEnvoi, setSelectedEnvoi] = useState<Envoi | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [sectors, setSectors] = useState<Sector[]>([]);
+  const [selectedSector, setSelectedSector] = useState<string>(''); // Store selected sector ID
+  const [loadingSectors, setLoadingSectors] = useState(true);
+  const [errorSectors, setErrorSectors] = useState<string | null>(null);
 
   useEffect(() => {
     const loadSectors = async () => {
-      const sectorsData = await fetchSectors();
-      setSectors(sectorsData);
+      setLoadingSectors(true);
+      setErrorSectors(null);
+      try {
+        // Fetch sectors - Assuming 'CHR', 'HACCP', 'Kezia', 'Tabac' are the relevant sectors for Envois too
+        // If Envois can have *any* sector, this might need adjustment or removal
+        const fetchedSectors = await fetchSectors(); // Reusing fetchSectors
+        setSectors(fetchedSectors as Sector[]);
+      } catch (err: any) {
+        setErrorSectors(`Erreur lors de la récupération des secteurs: ${err.message}`);
+        setSectors([]);
+      } finally {
+        setLoadingSectors(false);
+      }
     };
     loadSectors();
   }, []);
 
-  useEffect(() => {
-    if (selectedSector) {
-      const loadTickets = async () => {
-        const ticketsData = await fetchTicketsBySector(selectedSector);
-        setTickets(ticketsData);
-      };
-      loadTickets();
-    } else {
-      setTickets([]);
-    }
-  }, [selectedSector]);
+  const handleEnvoiSelect = (envoi: Envoi) => {
+    setSelectedEnvoi(envoi);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedEnvoi(null);
+  };
 
   const handleSectorChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedSector(event.target.value);
-    setSelectedTicket(null);
-  };
-
-  const handleTicketSelect = (ticket: any) => {
-    setSelectedTicket(ticket);
   };
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-4">Gestion des Envois</h2>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-2xl font-bold">Suivi des Envois</h2>
         <div>
-          <div className="mb-4">
-            <div className="form-control w-full max-w-xs">
-              <label className="label">
-                <span className="label-text">Secteur</span>
-              </label>
-              <select
-                className="select select-bordered"
-                value={selectedSector || ''}
-                onChange={handleSectorChange}
-              >
-                <option disabled value="">Choisir le secteur</option>
-                {sectors.map(sector => (
-                  <option key={sector.id} value={sector.id}>{sector.id}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <TicketList tickets={tickets} onTicketSelect={handleTicketSelect} />
+          <label htmlFor="sector-select" className="mr-2">Filtrer par Secteur:</label>
+          <select
+            id="sector-select"
+            className="select select-bordered select-sm"
+            value={selectedSector}
+            onChange={handleSectorChange}
+            disabled={loadingSectors || !!errorSectors}
+          >
+            <option value="">Tous les secteurs</option>
+            {loadingSectors && <option value="" disabled>Chargement...</option>}
+            {errorSectors && <option value="" disabled>Erreur</option>}
+            {sectors.map((sector) => (
+              <option key={sector.id} value={sector.id}>
+                {sector.id} {/* Assuming sector ID is the name */}
+              </option>
+            ))}
+          </select>
         </div>
+      </div>
+
+      {errorSectors && (
+         <div className="alert alert-warning">
+            <span>Erreur chargement secteurs: {errorSectors}</span>
+         </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4">
         <div>
-          <TicketDetails ticket={selectedTicket} />
+          {/* Pass selectedSector to EnvoiList */}
+          <EnvoiList
+            selectedSector={selectedSector}
+            onEnvoiSelect={handleEnvoiSelect}
+          />
         </div>
+        {/* Modal for details */}
+        {isModalOpen && <EnvoiDetails envoi={selectedEnvoi} onClose={handleCloseModal} />}
       </div>
     </div>
   );
