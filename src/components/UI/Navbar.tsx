@@ -39,7 +39,7 @@ const Navbar: React.FC = () => {
     <nav className="navbar bg-base-200 shadow-lg mb-6 rounded-box sticky top-0 z-50"> {/* Make navbar sticky */}
       <div className="navbar-start">
         <Link to="/" className="btn btn-ghost text-xl text-primary hover:bg-transparent">
-          <FaRocket className="icon" /> JDC SAP
+          <img src="https://mobicheckin-assets.s3.eu-west-1.amazonaws.com/uploads/events/671798f7036bcb2ff2d90c94/website/JDCBLANC_d4e67175-e1f6-43e9-9fb9-a166a81888e9.png" alt="Company Logo" className="h-8" />
         </Link>
       </div>
       <div className="navbar-center hidden lg:flex"> {/* Center links on larger screens */}
