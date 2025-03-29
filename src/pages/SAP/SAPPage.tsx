@@ -4,14 +4,27 @@ import TicketDetails from '../../components/Tickets/TicketDetails';
 import { fetchSectors, fetchTicketsBySectorService } from '../../services/firebaseService';
 import { useUserSectors } from '../../context/UserContext';
 
+// Assuming Ticket interface is defined elsewhere or here
+interface Ticket {
+  id: string;
+  nomClient: string;
+  description: string;
+  statut: string;
+  // ... other fields
+}
+
 const SAPPage: React.FC = () => {
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [sectors, setSectors] = useState<any[]>([]);
-  const [filteredSectors, setFilteredSectors] = useState<any[]>([]); // New state for filtered sectors
-  const [tickets, setTickets] = useState<any[]>([]);
+  const [filteredSectors, setFilteredSectors] = useState<any[]>([]);
+  // Tickets state is now managed within TicketList
+  // const [tickets, setTickets] = useState<any[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<any | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const { userSectors, loadingSectors, errorSectors } = useUserSectors(); // Use UserContext
+
+  // Keep track of the key for TicketList to force re-render/refetch on refresh
+  const [ticketListKey, setTicketListKey] = useState(0);
 
   useEffect(() => {
     const loadSectors = async () => {
@@ -27,39 +40,36 @@ const SAPPage: React.FC = () => {
     if (userSectors && sectors.length > 0) {
       const userAllowedSectors = sectors.filter(sector => userSectors.includes(sector.id));
       setFilteredSectors(userAllowedSectors);
+      // Automatically select the first allowed sector if none is selected
+      // if (!selectedSector && userAllowedSectors.length > 0) {
+      //   setSelectedSector(userAllowedSectors[0].id);
+      // }
     } else if (sectors.length > 0 && !userSectors) {
-      setFilteredSectors([]); // No sectors if userSectors is not loaded or user is not logged in
+       // If user context is loaded but user has no sectors (or not logged in)
+       setFilteredSectors([]);
+       setSelectedSector(null); // Ensure no sector is selected
+    } else if (sectors.length > 0) {
+       // If user context is still loading, show all sectors temporarily or handle as needed
+       setFilteredSectors(sectors);
     } else {
-      setFilteredSectors(sectors); // Show all sectors if userSectors is still loading or no user context
+       setFilteredSectors([]); // No sectors fetched yet
     }
   }, [sectors, userSectors]);
 
 
-  const loadTicketsForSector = useCallback(async (sector) => {
-    if (sector) {
-      try {
-        const ticketsData = await fetchTicketsBySectorService(sector);
-        setTickets(ticketsData);
-      } catch (error) {
-        console.error("Failed to load tickets:", error);
-        setTickets([]);
-      }
-    } else {
-      setTickets([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadTicketsForSector(selectedSector);
-  }, [selectedSector, loadTicketsForSector]);
+  // Removed loadTicketsForSector as it's now handled in TicketList
+  // const loadTicketsForSector = useCallback(async (sector) => { ... }, []);
+  // Removed useEffect for loadTicketsForSector
 
   const handleSectorChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedSector(event.target.value);
-    setSelectedTicket(null);
+    const newSector = event.target.value || null; // Handle empty selection
+    setSelectedSector(newSector);
+    setSelectedTicket(null); // Close details when sector changes
     setIsModalOpen(false);
+    setTicketListKey(prevKey => prevKey + 1); // Change key to force TicketList remount/refetch
   };
 
-  const handleTicketSelect = (ticket) => {
+  const handleTicketSelect = (ticket: Ticket) => { // Use Ticket interface
     setSelectedTicket(ticket);
     setIsModalOpen(true);
   };
@@ -69,12 +79,15 @@ const SAPPage: React.FC = () => {
     setSelectedTicket(null);
   };
 
+  // Function to refresh tickets by changing the key of TicketList
   const refreshTickets = useCallback(() => {
-    loadTicketsForSector(selectedSector);
-  }, [selectedSector, loadTicketsForSector]);
+    setTicketListKey(prevKey => prevKey + 1);
+    // Optionally close the modal on refresh
+    // handleCloseModal();
+  }, []);
 
 
-  if (loadingSectors) {
+  if (loadingSectors && sectors.length === 0) { // Show loading only if sectors aren't loaded yet
     return <p>Loading sectors...</p>; // Or a loading spinner
   }
 
@@ -87,6 +100,7 @@ const SAPPage: React.FC = () => {
     <div>
       <h2 className="text-2xl font-bold mb-4">Gestion des Tickets SAP</h2>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Left Column: Sector Selection and Ticket List */}
         <div>
           <div className="mb-4">
             <div className="form-control w-full max-w-xs">
@@ -97,24 +111,39 @@ const SAPPage: React.FC = () => {
                 className="select select-bordered"
                 value={selectedSector || ''}
                 onChange={handleSectorChange}
-                disabled={loadingSectors} // Disable select while loading
+                disabled={loadingSectors && sectors.length === 0} // Disable only during initial load
               >
-                <option disabled value="">Choisir le secteur</option>
-                {filteredSectors.map(sector => ( // Use filteredSectors here
+                <option value="">Choisir le secteur</option> {/* Allow unselecting */}
+                {filteredSectors.length === 0 && !loadingSectors && (
+                   <option value="" disabled>Aucun secteur disponible</option>
+                )}
+                {filteredSectors.map(sector => (
                   <option key={sector.id} value={sector.id}>{sector.id}</option>
                 ))}
               </select>
             </div>
           </div>
-          {selectedSector && (
-            <TicketList secteur={selectedSector} onTicketSelect={handleTicketSelect} />
-          )}
-          {!selectedSector && (
+          {/* Pass selectedSector and key to TicketList */}
+          <TicketList
+            key={ticketListKey} // Add key here
+            selectedSector={selectedSector}
+            onTicketSelect={handleTicketSelect}
+          />
+          {/* Message removed as TicketList handles its own empty/loading states */}
+          {/* {!selectedSector && (
             <p>Veuillez sélectionner un secteur pour afficher les tickets.</p>
-          )}
+          )} */}
         </div>
+        {/* Right Column: Ticket Details Modal */}
         <div>
-          {isModalOpen && <TicketDetails ticket={selectedTicket} onClose={handleCloseModal} sectorId={selectedSector || ''} onTicketUpdated={refreshTickets} />}
+          {isModalOpen && selectedTicket && ( // Ensure selectedTicket is not null
+            <TicketDetails
+              ticket={selectedTicket}
+              onClose={handleCloseModal}
+              sectorId={selectedSector || ''} // Pass sectorId if needed by details
+              onTicketUpdated={refreshTickets} // Pass refresh function
+            />
+          )}
         </div>
       </div>
     </div>

@@ -35,13 +35,23 @@ export const addDocument = async (collectionName: string, data: any) => {
     // Check if the collection is one of the SAP sectors
     const sapSectors = ['CHR', 'HACCP', 'Kezia', 'Tabac'];
     let newData = { ...data };
+    let initialStatus = data.statut; // Get provided status or undefined
 
-    if (sapSectors.includes(collectionName) && !data.statut) {
-      // Set default status to "en cours" if it's an SAP sector and status is not already provided
-      newData = { ...data, statut: 'en cours' };
+    // Determine initial status for SAP sectors
+    if (sapSectors.includes(collectionName)) {
+        // Check for RMA condition first
+        if (data.demandeSAP?.toLowerCase().includes('demande de rma')) {
+            initialStatus = 'Demande de RMA';
+        } else if (!initialStatus) {
+            // Set default only if no status provided and not RMA
+            initialStatus = 'en cours';
+        }
+        newData = { ...data, statut: initialStatus };
     }
 
+
     const docRef = await addDoc(collection(db, collectionName), newData);
+    console.log(`Document added to ${collectionName} with ID: ${docRef.id} and status: ${initialStatus}`);
     return docRef.id;
   } catch (error) {
     console.error(`Error adding document to ${collectionName}:`, error);
@@ -89,31 +99,48 @@ export const fetchSectors = async () => {
   }
 };
 
-// Function to fetch tickets by sector
+// Function to fetch tickets by sector (UPDATED LOGIC)
 export const fetchTicketsBySector = async (sectorId: string) => {
   try {
     const ticketsCollection = collection(db, sectorId); // Use sectorId directly as collection name
     const ticketsSnapshot = await getDocs(ticketsCollection);
     const tickets = [];
+    const updatePromises: Promise<void>[] = []; // Store update promises
 
     for (const docSnap of ticketsSnapshot.docs) {
       const ticketData = docSnap.data();
-      let updated = false;
+      let currentStatus = ticketData.statut; // Get current status
 
-      // Check if status is missing or empty and set default
-      if (!ticketData.statut) {
-        ticketData.statut = 'en cours'; // Default status
-        updated = true;
-        // Update the document in Firestore
-        await updateDoc(docSnap.ref, { statut: 'en cours' });
+      // Check if status needs correction based on demandeSAP
+      const needsRmaStatus = ticketData.demandeSAP?.toLowerCase().includes('demande de rma');
+      const isNotRmaStatus = currentStatus !== 'Demande de RMA';
+
+      if (needsRmaStatus && isNotRmaStatus) {
+        // If demandeSAP indicates RMA but status isn't set correctly, update it
+        currentStatus = 'Demande de RMA'; // Update local status for immediate return
+        // Asynchronously update the document in Firestore
+        updatePromises.push(updateDoc(docSnap.ref, { statut: currentStatus }));
+        console.log(`Updating ticket ${docSnap.id} in sector ${sectorId} to status: ${currentStatus} based on demandeSAP.`);
+      } else if (!currentStatus) {
+        // If status is missing entirely, set default and update
+        currentStatus = 'en cours'; // Default status
+        updatePromises.push(updateDoc(docSnap.ref, { statut: currentStatus }));
+        console.log(`Updating ticket ${docSnap.id} in sector ${sectorId} to default status: ${currentStatus} as it was missing.`);
       }
 
       tickets.push({
         id: docSnap.id,
         ...ticketData,
+        statut: currentStatus, // Ensure the returned ticket has the correct status
         secteur: sectorId, // Add sector info if needed elsewhere
       });
     }
+
+    // Wait for all potential updates to complete before returning
+    // This prevents a potential race condition where the list displays old data briefly
+    await Promise.all(updatePromises);
+    console.log(`Finished processing and potential updates for ${tickets.length} tickets in sector ${sectorId}.`);
+
     return tickets;
 
   } catch (error) {
@@ -122,7 +149,8 @@ export const fetchTicketsBySector = async (sectorId: string) => {
   }
 };
 
-// Function to update ticket status
+
+// Function to update ticket status (remains the same, used by TicketDetails)
 export const updateTicketStatus = async (sectorId: string, ticketId: string, status: string) => {
   try {
     const ticketDocRef = doc(db, sectorId, ticketId); // Use sectorId directly as collection name
@@ -137,6 +165,7 @@ export const updateTicketStatus = async (sectorId: string, ticketId: string, sta
 // Example for tickets:
 export const fetchTicketsBySectorService = async (secteur: string) => {
   try {
+    // Now calls the updated fetchTicketsBySector
     return await fetchTicketsBySector(secteur);
   } catch (error) {
     console.error(`Error in fetchTicketsBySectorService for sector ${secteur}:`, error);
