@@ -1,31 +1,36 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { fetchTicketsBySectorService } from '../../services/firebaseService';
 
-// Updated Ticket interface to include raisonSociale
+// Updated Ticket interface to include raisonSociale and secteur
 interface Ticket {
   id: string;
-  raisonSociale: string; // Use this field for client name
-  description?: string; // Keep for potential future use or if needed by TicketDetails
-  statut: string;
+  raisonSociale: string; // Use this field for client name and filtering
+  description?: string;
+  statut: string;        // Use this field for filtering
   adresse?: string;
-  codeClient?: string;
-  date?: string; // Ensure this field exists and has the correct date format
+  codeClient?: string;    // Use this field for filtering
+  date?: string;
   demandeSAP?: string;
   messageId?: string;
-  numeroSAP?: string;
+  numeroSAP?: string;     // Use this field for filtering
   telephone?: string;
+  secteur: string;       // Added secteur
   // ... other fields
 }
 
 interface TicketListProps {
   selectedSector: string | null;
   onTicketSelect: (ticket: Ticket) => void;
+  // Filter props
+  searchTermRaisonSociale: string;
+  searchTermCodeClient: string;
+  searchTermNumeroSAP: string;
+  filterStatus: string;
 }
 
 // Helper function to group tickets by raisonSociale
 const groupTicketsByClient = (tickets: Ticket[]): { [clientName: string]: Ticket[] } => {
   return tickets.reduce((acc, ticket) => {
-    // Use raisonSociale for grouping, fallback to 'Client Inconnu'
     const clientName = ticket.raisonSociale || 'Client Inconnu';
     if (!acc[clientName]) {
       acc[clientName] = [];
@@ -39,9 +44,9 @@ const groupTicketsByClient = (tickets: Ticket[]): { [clientName: string]: Ticket
 
 // Define badge classes based on status (consistent with TicketDetails)
 const getStatusBadgeClass = (status: string): string => {
-  switch (status?.toLowerCase()) { // Use lowercase for robust comparison
+  switch (status?.toLowerCase()) {
     case 'en cours': return 'badge-warning';
-    case 'a clôturée': return 'badge-info'; // Ensure this matches the value used in TicketDetails
+    case 'à clôturer': return 'badge-info'; // Corrected value
     case 'terminée': return 'badge-success';
     case 'demande de rma': return 'badge-secondary';
     default: return 'badge-ghost';
@@ -49,15 +54,22 @@ const getStatusBadgeClass = (status: string): string => {
 };
 
 
-const TicketList: React.FC<TicketListProps> = ({ selectedSector, onTicketSelect }) => {
-  const [tickets, setTickets] = useState<Ticket[]>([]);
+const TicketList: React.FC<TicketListProps> = ({
+  selectedSector,
+  onTicketSelect,
+  searchTermRaisonSociale,
+  searchTermCodeClient,
+  searchTermNumeroSAP,
+  filterStatus
+}) => {
+  const [allTickets, setAllTickets] = useState<Ticket[]>([]); // Store all tickets for the sector
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadTickets = async () => {
       if (!selectedSector) {
-        setTickets([]);
+        setAllTickets([]);
         setLoading(false);
         setError(null);
         return;
@@ -66,29 +78,41 @@ const TicketList: React.FC<TicketListProps> = ({ selectedSector, onTicketSelect 
       setLoading(true);
       setError(null);
       try {
-        // Ensure fetchTicketsBySectorService returns data including raisonSociale, codeClient, telephone, date, statut
         const fetchedTickets = await fetchTicketsBySectorService(selectedSector);
-        // Cast to Ticket[] - make sure the fetched data matches the interface
-        setTickets(fetchedTickets as Ticket[]);
+        // Add the sector to each ticket object
+        const ticketsWithSector = fetchedTickets.map(ticket => ({
+          ...ticket,
+          secteur: selectedSector // Add sector info
+        })) as Ticket[];
+        setAllTickets(ticketsWithSector);
         setError(null);
       } catch (err: any) {
         setError(`Erreur lors de la récupération des tickets pour ${selectedSector}: ${err.message}`);
-        setTickets([]);
+        setAllTickets([]);
       } finally {
         setLoading(false);
       }
     };
 
     loadTickets();
-  }, [selectedSector]);
+  }, [selectedSector]); // Only refetch when sector changes
+
+  // Filter tickets based on search terms and status filter
+  const filteredTickets = useMemo(() => {
+    return allTickets.filter(ticket => {
+      const raisonSocialeMatch = ticket.raisonSociale?.toLowerCase().includes(searchTermRaisonSociale.toLowerCase());
+      const codeClientMatch = ticket.codeClient?.toLowerCase().includes(searchTermCodeClient.toLowerCase());
+      const numeroSAPMatch = ticket.numeroSAP?.toLowerCase().includes(searchTermNumeroSAP.toLowerCase());
+      const statusMatch = filterStatus ? ticket.statut?.toLowerCase() === filterStatus.toLowerCase() : true; // Check status if filter is set
+
+      return raisonSocialeMatch && codeClientMatch && numeroSAPMatch && statusMatch;
+    });
+  }, [allTickets, searchTermRaisonSociale, searchTermCodeClient, searchTermNumeroSAP, filterStatus]);
 
   // Group filtered tickets by raisonSociale
   const groupedTickets = useMemo(() => {
-    const grouped = groupTicketsByClient(tickets);
-    // Optional: Sort client groups by name
-    // return Object.entries(grouped).sort(([nameA], [nameB]) => nameA.localeCompare(nameB));
-    return grouped;
-  }, [tickets]);
+    return groupTicketsByClient(filteredTickets);
+  }, [filteredTickets]);
 
   if (loading) {
     return <div className="flex justify-center items-center p-4"><span className="loading loading-dots loading-lg"></span></div>;
@@ -107,30 +131,30 @@ const TicketList: React.FC<TicketListProps> = ({ selectedSector, onTicketSelect 
   const clientNames = Object.keys(groupedTickets).sort();
 
   return (
-    <div>
-      {tickets.length === 0 && !loading && !error && selectedSector ? (
-        <p className="text-center p-4">Aucun ticket trouvé pour le secteur {selectedSector}.</p>
-      ) : tickets.length === 0 && !selectedSector ? (
+    <div className="w-full"> {/* Ensure the root container takes full width */}
+      {filteredTickets.length === 0 && !loading && !error && selectedSector ? (
+        <p className="text-center p-4">Aucun ticket trouvé pour les filtres actuels dans le secteur {selectedSector}.</p>
+      ) : allTickets.length === 0 && !selectedSector ? (
          <p className="text-center p-4">Veuillez sélectionner un secteur.</p>
       ) : (
         clientNames.map((clientName) => (
-          <div key={clientName} className="mb-6 p-4 border rounded-lg shadow-sm bg-base-200">
-            {/* Display clientName (which is raisonSociale) */}
+          // Added w-full to this div to make the client group container take full width
+          <div key={clientName} className="w-full mb-6 p-4 border rounded-lg shadow-sm bg-base-200">
             <h3 className="text-xl font-semibold mb-3 sticky top-0 bg-base-200 py-2 z-10">{clientName} ({groupedTickets[clientName].length})</h3>
             <div className="space-y-4">
               {groupedTickets[clientName].map((ticket) => (
                 <div
-                  key={ticket.id} // Use Firestore document ID as key
+                  key={ticket.id}
                   onClick={() => onTicketSelect(ticket)}
+                  // The card already has w-full, so it should expand within the client group div
                   className="card w-full bg-base-100 shadow-md cursor-pointer hover:shadow-lg transition-shadow duration-200"
                 >
                   <div className="card-body p-4">
-                    {/* Display ONLY Code Client, Téléphone, Date */}
                     <p className="text-sm"><b>Code Client:</b> {ticket.codeClient || 'N/A'}</p>
                     <p className="text-sm"><b>Téléphone:</b> {ticket.telephone || 'N/A'}</p>
-                    <p className="text-sm"><b>Date:</b> {ticket.date || 'N/A'}</p> {/* Ensure 'date' field is available */}
+                    <p className="text-sm"><b>Date:</b> {ticket.date || 'N/A'}</p>
+                    {ticket.numeroSAP && <p className="text-sm"><b>N° SAP:</b> {ticket.numeroSAP}</p>} {/* Show Numero SAP if available */}
 
-                    {/* Keep the status badge at the bottom */}
                     <div className="card-actions justify-end items-center mt-2">
                        <div className={`badge ${getStatusBadgeClass(ticket.statut)}`}>
                          {ticket.statut || 'N/A'}
