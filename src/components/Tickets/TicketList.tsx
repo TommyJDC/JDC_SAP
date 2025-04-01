@@ -1,117 +1,132 @@
 import React from 'react';
+import { FaChevronDown, FaChevronRight, FaUserTie } from 'react-icons/fa'; // Added FaUserTie
 
-// Updated Ticket interface (ensure it matches the data structure in SAPPage)
 interface Ticket {
   id: string;
-  raisonSociale?: string; // Grouping key
-  description?: string;
-  statut?: string;        // For badge
-  adresse?: string;
-  codeClient?: string;    // Display field
-  date?: string;          // Display field
-  demandeSAP?: string;
-  messageId?: string;
-  numeroSAP?: string;     // Display field
-  telephone?: string;     // Display field
-  secteur?: string;       // May not be needed if data comes pre-filtered
-  // ... other fields
-  [key: string]: any; // Allow other properties
+  raisonSociale?: string;
+  codeClient?: string;
+  numeroSAP?: string;
+  statut?: string;
+  salesperson?: string; // Expect salesperson field
+  [key: string]: any; // Allow other fields
 }
 
-// Simplified Props: Expects pre-grouped data
+interface GroupedTickets {
+  [key: string]: Ticket[];
+}
+
 interface TicketListProps {
-  groupedTickets: Record<string, Ticket[]>; // Directly accept grouped tickets
-  onSelectTicket: (ticket: Ticket) => void; // Function to handle ticket selection
-  selectedTicketId?: string | null;         // ID of the currently selected ticket for highlighting (optional)
-  groupByField: 'raisonSociale'; // Explicitly state the grouping field used by the parent (for clarity)
+  groupedTickets: GroupedTickets;
+  onSelectTicket: (ticket: Ticket) => void;
+  selectedTicketId?: string | null;
+  groupByField: 'raisonSociale'; // Currently only supports grouping by raisonSociale
 }
-
-// Define badge classes based on status (consistent with TicketDetails)
-const getStatusBadgeClass = (status?: string): string => {
-  switch (status?.toLowerCase()) {
-    case 'en cours': return 'badge-warning';
-    case 'à clôturer': return 'badge-info';
-    case 'terminée': return 'badge-success';
-    case 'demande de rma': return 'badge-secondary';
-    default: return 'badge-ghost';
-  }
-};
 
 const TicketList: React.FC<TicketListProps> = ({
   groupedTickets,
   onSelectTicket,
   selectedTicketId,
-  // groupByField is mainly for documentation/clarity here, as grouping is done by parent
+  groupByField, // Keep prop for potential future flexibility
 }) => {
+  const [openGroups, setOpenGroups] = React.useState<Record<string, boolean>>({});
 
-  // No internal state for tickets, loading, error, or filters needed anymore.
-  // No internal useEffect for fetching needed.
-  // No internal useMemo for filtering/grouping needed.
+  // Effect to potentially open the group of the selected ticket
+  React.useEffect(() => {
+    if (selectedTicketId) {
+      const groupKey = Object.keys(groupedTickets).find(key =>
+        groupedTickets[key].some(ticket => ticket.id === selectedTicketId)
+      );
+      if (groupKey && !openGroups[groupKey]) {
+        setOpenGroups(prev => ({ ...prev, [groupKey]: true }));
+      }
+    }
+    // Intentionally not depending on groupedTickets or openGroups to avoid loops
+    // This effect only runs when the selectedTicketId changes from the outside
+  }, [selectedTicketId]);
 
-  // Get sorted client names (group keys) directly from the prop
-  const groupKeys = Object.keys(groupedTickets).sort();
+
+  const toggleGroup = (groupKey: string) => {
+    setOpenGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
+  };
+
+  const groupKeys = Object.keys(groupedTickets).sort(); // Sort groups alphabetically
 
   if (groupKeys.length === 0) {
-    return (
-      <p className="text-center p-4 text-gray-500">
-        Aucun ticket à afficher pour la sélection ou les filtres actuels.
-      </p>
-    );
+    return <p className="text-center text-gray-500">Aucun ticket à afficher.</p>;
   }
 
   return (
-    <div className="w-full"> {/* Ensure the root container takes full width */}
-      {groupKeys.map((groupKey) => (
-        // Client group container
-        <div key={groupKey} className="w-full mb-6 p-4 border rounded-lg shadow-sm bg-base-200">
-          {/* Sticky header for the group (e.g., Raison Sociale) */}
-          <h3 className="text-xl font-semibold mb-3 sticky top-0 bg-base-200 py-2 z-10">
-            {groupKey} ({groupedTickets[groupKey].length})
-          </h3>
-          {/* List of tickets within the group */}
-          <div className="space-y-3"> {/* Slightly reduced spacing */}
-            {groupedTickets[groupKey].map((ticket) => (
-              <div
-                key={ticket.id}
-                onClick={() => onSelectTicket(ticket)}
-                // Highlight selected ticket
-                className={`
-                  card w-full bg-base-100 shadow-md cursor-pointer hover:shadow-lg transition-shadow duration-200
-                  ${selectedTicketId === ticket.id ? 'ring-2 ring-primary ring-offset-2' : ''}
-                `}
-              >
-                <div className="card-body p-3"> {/* Slightly reduced padding */}
-                  {/* Display relevant ticket info */}
-                  <p className="text-sm font-medium truncate" title={ticket.raisonSociale}>
-                     {/* Raison Sociale is the group key, maybe show Code Client here? */}
-                     <b>Code Client:</b> {ticket.codeClient || 'N/A'}
-                  </p>
-                  <p className="text-xs text-gray-600">
-                    <b>Téléphone:</b> {ticket.telephone || 'N/A'}
-                  </p>
-                  <p className="text-xs text-gray-600">
-                    <b>Date:</b> {ticket.date || 'N/A'} {/* Confirm which date field is correct */}
-                  </p>
-                  {ticket.numeroSAP && (
-                    <p className="text-xs text-gray-600">
-                      <b>N° SAP:</b> {ticket.numeroSAP}
-                    </p>
-                  )}
+    <div className="space-y-2">
+      {groupKeys.map((groupKey) => {
+        const ticketsInGroup = groupedTickets[groupKey];
+        const isGroupOpen = openGroups[groupKey] ?? false; // Default to closed
 
-                  {/* Status badge at the bottom right */}
-                  <div className="card-actions justify-end items-center mt-1">
-                     <div className={`badge badge-sm ${getStatusBadgeClass(ticket.statut)}`}>
-                       {ticket.statut || 'N/A'}
-                     </div>
-                  </div>
-                </div>
-              </div>
-            ))}
+        return (
+          <div key={groupKey} className="collapse collapse-arrow border border-base-300 bg-base-100 rounded-md">
+             <input
+                type="checkbox"
+                checked={isGroupOpen}
+                onChange={() => toggleGroup(groupKey)}
+                className="min-h-0 p-0" // DaisyUI checkbox hack for collapse control
+                aria-label={`Toggle group ${groupKey}`}
+             />
+            <div
+              className="collapse-title text-md font-medium cursor-pointer flex justify-between items-center p-2 min-h-0"
+              onClick={() => toggleGroup(groupKey)} // Also allow clicking title
+            >
+              <span>{groupKey} ({ticketsInGroup.length})</span>
+              {/* Icon managed by collapse-arrow */}
+            </div>
+            <div className={`collapse-content p-0 ${isGroupOpen ? 'expanded' : ''}`}>
+              <ul className="menu menu-sm bg-base-100 p-0 [&_li>*]:rounded-none">
+                {ticketsInGroup.map((ticket) => (
+                  <li key={ticket.id}>
+                    <a
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        onSelectTicket(ticket);
+                      }}
+                      className={`flex justify-between items-center p-2 ${ticket.id === selectedTicketId ? 'active' : ''}`}
+                    >
+                      <div className="flex-1 overflow-hidden mr-2">
+                        <span className="block truncate text-xs font-semibold">
+                          {ticket.numeroSAP || ticket.codeClient || `ID: ${ticket.id.substring(0, 6)}...`}
+                        </span>
+                        <span className="block truncate text-xs text-gray-500">
+                          Statut: {ticket.statut || 'N/A'}
+                        </span>
+                         {/* Display Salesperson */}
+                         {ticket.salesperson && (
+                            <span className="block truncate text-xs text-info mt-1 flex items-center">
+                                <FaUserTie className="mr-1 flex-shrink-0" />
+                                {ticket.salesperson}
+                            </span>
+                         )}
+                      </div>
+                      {/* Optional: Add a small indicator like status color */}
+                      {/* <span className={`h-2 w-2 rounded-full ${getStatusColor(ticket.statut)}`}></span> */}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };
+
+// Helper function for status color (example)
+// const getStatusColor = (status?: string): string => {
+//   switch (status?.toLowerCase()) {
+//     case 'en cours': return 'bg-blue-500';
+//     case 'terminé': return 'bg-green-500';
+//     case 'annulé': return 'bg-red-500';
+//     case 'demande de rma': return 'bg-orange-500';
+//     default: return 'bg-gray-400';
+//   }
+// };
 
 export default TicketList;

@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@react-leaflet/core": "2.x",
+    "@turf/boolean-point-in-polygon": "^6.5.0",
+    "@turf/helpers": "^6.5.0",
     "axios": "^1.6.7",
     "chart.js": "^4.4.1",
     "daisyui": "^4.7.2",
