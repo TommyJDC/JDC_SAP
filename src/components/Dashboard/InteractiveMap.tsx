@@ -18,16 +18,13 @@ interface InteractiveMapProps {
 }
 
 // --- KML Style Mapping ---
-// Manually map KML style IDs (or parts) to Leaflet Path options
-// KML uses ABGR hex (Alpha, Blue, Green, Red), Leaflet uses #RRGGBB hex
-// KML Opacity '4d' hex = 77 decimal. 77/255 ≈ 0.3
 const kmlStyleMap: { [key: string]: L.PathOptions } = {
-  '#poly-000000-1200-77-nodesc': { color: '#000000', weight: 1.2, fillColor: '#000000', fillOpacity: 0.3 }, // Black
-  '#poly-097138-1200-77-nodesc': { color: '#097138', weight: 1.2, fillColor: '#097138', fillOpacity: 0.3 }, // Dark Green
-  '#poly-9C27B0-1200-77-nodesc': { color: '#9C27B0', weight: 1.2, fillColor: '#9C27B0', fillOpacity: 0.3 }, // Purple
-  '#poly-9FA8DA-1200-77-nodesc': { color: '#9FA8DA', weight: 1.2, fillColor: '#9FA8DA', fillOpacity: 0.3 }, // Light Blue/Gray
-  '#poly-E65100-1200-77-nodesc': { color: '#E65100', weight: 1.2, fillColor: '#E65100', fillOpacity: 0.3 }, // Orange
-  '#poly-FFEA00-1200-77-nodesc': { color: '#FFEA00', weight: 1.2, fillColor: '#FFEA00', fillOpacity: 0.3 }, // Yellow
+  '#poly-000000-1200-77-nodesc': { color: '#000000', weight: 1.2, fillColor: '#000000', fillOpacity: 0.3 }, // Black (Julien Isère)
+  '#poly-097138-1200-77-nodesc': { color: '#097138', weight: 1.2, fillColor: '#097138', fillOpacity: 0.3 }, // Dark Green (Julien)
+  '#poly-9C27B0-1200-77-nodesc': { color: '#9C27B0', weight: 1.2, fillColor: '#9C27B0', fillOpacity: 0.3 }, // Purple (Matthieu)
+  '#poly-9FA8DA-1200-77-nodesc': { color: '#9FA8DA', weight: 1.2, fillColor: '#9FA8DA', fillOpacity: 0.3 }, // Light Blue/Gray (Guillem)
+  '#poly-E65100-1200-77-nodesc': { color: '#E65100', weight: 1.2, fillColor: '#E65100', fillOpacity: 0.3 }, // Orange (Florian)
+  '#poly-FFEA00-1200-77-nodesc': { color: '#FFEA00', weight: 1.2, fillColor: '#FFEA00', fillOpacity: 0.3 }, // Yellow (Baptiste)
 };
 
 const defaultKmlStyle: L.PathOptions = {
@@ -67,7 +64,8 @@ L.Icon.Default.mergeOptions({
 const InteractiveMap: React.FC<InteractiveMapProps> = ({ tickets }) => {
   const mapRef = useRef<L.Map | null>(null);
   const markerLayerGroupRef = useRef<L.LayerGroup | null>(null);
-  const kmlLayerRef = useRef<L.Layer | null>(null);
+  const kmlLayerRef = useRef<L.GeoJSON | null>(null);
+  const kmlLabelLayerGroupRef = useRef<L.LayerGroup | null>(null); // Layer group for KML labels
   const [markers, setMarkers] = useState<L.Marker[]>([]);
   const [kmlError, setKmlError] = useState<string | null>(null);
 
@@ -103,26 +101,63 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({ tickets }) => {
 
     mapRef.current = newMap;
     markerLayerGroupRef.current = L.layerGroup().addTo(newMap);
+    kmlLabelLayerGroupRef.current = L.layerGroup().addTo(newMap); // Initialize KML label layer group
 
     // --- Load KML Data ---
     setKmlError(null);
-    const kmlUrl = '/secteurs.kml';
+    const kmlUrl = '/secteurs.kml'; // Path relative to public folder
     console.log(`[InteractiveMap] Attempting to load KML from: ${kmlUrl}`);
 
     const kmlLayer = omnivore.kml(kmlUrl)
-      .on('ready', function(this: L.GeoJSON) {
-        if (mapRef.current) {
+      .on('ready', function(this: L.GeoJSON) { // 'this' context is the GeoJSON layer
+        if (mapRef.current && kmlLabelLayerGroupRef.current) { // Ensure map and label group exist
           console.log('[InteractiveMap] KML data loaded successfully.');
-          kmlLayerRef.current = this;
+          kmlLayerRef.current = this; // Store the KML layer reference
+          kmlLabelLayerGroupRef.current.clearLayers(); // Clear previous labels if any
 
           this.eachLayer((layer: any) => {
+            // Omnivore converts KML to GeoJSON, so we access properties via feature.properties
             if (layer.feature && layer.feature.properties) {
               const sectorName = layer.feature.properties.name;
-              const styleUrl = layer.feature.properties.styleUrl;
+              const styleUrl = layer.feature.properties.styleUrl; // KML style URL
 
-              // Bind Popup
+              // Bind Popup using the 'name' property from KML
               if (sectorName) {
                 layer.bindPopup(`<b>Secteur:</b> ${sectorName}`);
+
+                // --- Add KML Name Label ---
+                try {
+                  if (typeof layer.getBounds === 'function') {
+                    const bounds = layer.getBounds();
+                    if (bounds && typeof bounds.getCenter === 'function') {
+                      const center = bounds.getCenter();
+
+                      // Create a transparent divIcon for the label
+                      const labelIcon = L.divIcon({
+                          className: 'kml-label-icon', // Keep class for potential future CSS
+                          // Apply opacity and basic styling directly. Added text-shadow for better visibility.
+                          html: `<span style="opacity: 0.5; font-weight: bold; font-size: 12px; color: black; text-shadow: 0 0 2px white, 0 0 2px white, 0 0 2px white;">${sectorName}</span>`,
+                          iconSize: [100, 20], // Adjust size as needed (width, height)
+                          iconAnchor: [50, 10] // Center the anchor (width/2, height/2)
+                      });
+
+                      // Create marker with the label icon and add to the label layer group
+                      L.marker(center, { icon: labelIcon, interactive: false }) // Make non-interactive
+                         .addTo(kmlLabelLayerGroupRef.current!); // Add to the dedicated label layer
+
+                      console.log(`[InteractiveMap] Added label for sector: ${sectorName}`);
+
+                    } else {
+                       console.warn(`[InteractiveMap] Could not get center for sector: ${sectorName}. Bounds:`, bounds);
+                    }
+                  } else {
+                     console.warn(`[InteractiveMap] layer.getBounds is not a function for sector: ${sectorName}. Cannot add label.`);
+                  }
+                } catch (labelError) {
+                   console.error(`[InteractiveMap] Error creating label for sector ${sectorName}:`, labelError);
+                }
+                // --- End Add KML Name Label ---
+
               } else {
                  console.warn('[InteractiveMap] KML feature found without a name property:', layer.feature);
               }
@@ -131,13 +166,13 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({ tickets }) => {
               let appliedStyle = defaultKmlStyle; // Start with default
               if (styleUrl && kmlStyleMap[styleUrl]) {
                   appliedStyle = kmlStyleMap[styleUrl];
-                  console.log(`[InteractiveMap] Applying mapped style for ${sectorName || 'Unnamed Sector'} (StyleURL: ${styleUrl})`);
+                  // console.log(`[InteractiveMap] Applying mapped style for ${sectorName || 'Unnamed Sector'} (StyleURL: ${styleUrl})`);
               } else {
                   console.warn(`[InteractiveMap] StyleURL "${styleUrl}" not found in kmlStyleMap for sector ${sectorName || 'Unnamed Sector'}. Applying default style.`);
               }
 
               try {
-                  // Check if setStyle exists before calling
+                  // Check if setStyle exists before calling (it should for polygons)
                   if (typeof layer.setStyle === 'function') {
                       layer.setStyle(appliedStyle);
                   } else {
@@ -153,25 +188,45 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({ tickets }) => {
             }
           });
 
-          this.addTo(mapRef.current);
+          this.addTo(mapRef.current); // Add the styled KML layer to the map
+
+          // Fit map bounds to the KML layer if no markers are present initially
+          if (markers.length === 0 && kmlLayerRef.current) {
+             try {
+                const kmlBounds = kmlLayerRef.current.getBounds();
+                if (kmlBounds.isValid()) {
+                    mapRef.current.fitBounds(kmlBounds, { padding: [50, 50] });
+                } else {
+                    console.warn("[InteractiveMap] KML bounds are invalid.");
+                }
+             } catch (boundsError) {
+                 console.error("[InteractiveMap] Error fitting map bounds to KML:", boundsError);
+             }
+          }
 
         } else {
-          console.warn('[InteractiveMap] KML loaded, but map was removed before adding layer.');
+          console.warn('[InteractiveMap] KML loaded, but map or label layer group was removed before processing.');
         }
       })
       .on('error', (e: any) => {
         console.error('[InteractiveMap] Error loading KML data:', e?.error || e);
         setKmlError(`Impossible de charger le fichier KML : ${e?.error?.message || 'Erreur inconnue'}`);
-        kmlLayerRef.current = null;
+        kmlLayerRef.current = null; // Reset ref on error
       });
     // --- End Load KML Data ---
 
 
     return () => {
       if (mapRef.current) {
+        // Remove KML layer if it exists
         if (kmlLayerRef.current) {
           mapRef.current.removeLayer(kmlLayerRef.current);
           kmlLayerRef.current = null;
+        }
+        // Remove KML label layer group
+        if (kmlLabelLayerGroupRef.current) {
+            mapRef.current.removeLayer(kmlLabelLayerGroupRef.current);
+            kmlLabelLayerGroupRef.current = null;
         }
         // Also remove marker layer group
         if (markerLayerGroupRef.current) {
@@ -182,14 +237,16 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({ tickets }) => {
         mapRef.current = null;
       }
     };
-  }, []);
+  }, []); // Empty dependency array ensures this runs only once on mount
 
   // Marker Update Effect
   useEffect(() => {
     if (!mapRef.current || !markerLayerGroupRef.current) {
+      console.warn("[InteractiveMap] Map or marker layer group not ready for marker update.");
       return;
     }
     if (geocodingIsLoading) {
+      console.log("[InteractiveMap] Geocoding in progress, skipping marker update.");
       return;
     }
 
@@ -200,12 +257,14 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({ tickets }) => {
         if (mapRef.current) {
             markerLayerGroupRef.current = L.layerGroup().addTo(mapRef.current);
         } else {
+            console.error("[InteractiveMap] Cannot re-initialize marker layer group: Map is null.");
             return; // Cannot proceed without map
         }
     }
 
 
     if (!Array.isArray(validTicketsForMap) || !Array.isArray(fetchedCoordinates)) {
+        console.warn("[InteractiveMap] Invalid tickets or coordinates data, clearing markers.");
         markerLayerGroupRef.current.clearLayers();
         setMarkers([]);
         return;
@@ -214,9 +273,10 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({ tickets }) => {
     markerLayerGroupRef.current.clearLayers();
     let newMarkers: L.Marker[] = [];
 
+    // Check for length mismatch AFTER ensuring both are arrays
     if (validTicketsForMap.length !== fetchedCoordinates.length) {
-        console.warn(`[InteractiveMap] Skipping marker update: Mismatch between validTicketsForMap length (${validTicketsForMap.length}) and fetchedCoordinates length (${fetchedCoordinates.length}).`);
-         setMarkers([]);
+        console.warn(`[InteractiveMap] Skipping marker update: Mismatch between validTicketsForMap length (${validTicketsForMap.length}) and fetchedCoordinates length (${fetchedCoordinates.length}). This might happen during data loading transitions.`);
+         setMarkers([]); // Clear existing markers state
          return;
     }
 
@@ -233,52 +293,74 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({ tickets }) => {
         } catch (markerError) {
           console.error(`[InteractiveMap] Error creating marker instance for Ticket ID: ${ticket.id}:`, markerError);
         }
+      } else {
+         // console.log(`[InteractiveMap] Skipping marker for Ticket ID: ${ticket.id} due to invalid coordinates:`, coordinate);
       }
     });
 
     if (newMarkers.length > 0 && markerLayerGroupRef.current) {
+        console.log(`[InteractiveMap] Adding ${newMarkers.length} new markers to the map.`);
         newMarkers.forEach(marker => marker.addTo(markerLayerGroupRef.current!));
+    } else {
+        console.log("[InteractiveMap] No valid new markers to add.");
     }
 
-    setMarkers(newMarkers);
+    setMarkers(newMarkers); // Update the state with the new markers array
 
-  }, [tickets, fetchedCoordinates, geocodingIsLoading, geocodingError, validTicketsForMap]);
+  }, [tickets, fetchedCoordinates, geocodingIsLoading, geocodingError, validTicketsForMap]); // Dependencies for marker updates
 
 
-  // Fit Bounds Effect (for markers)
+  // Fit Bounds Effect (handles both markers and KML)
   useEffect(() => {
-    // Check map, marker layer group, and ensure geocoding is done
-    if (mapRef.current && markerLayerGroupRef.current && !geocodingIsLoading) {
-        // CRITICAL FIX: Check if markerLayerGroupRef.current is a valid LayerGroup AND has the getBounds method
-        if (markerLayerGroupRef.current instanceof L.LayerGroup && typeof markerLayerGroupRef.current.getBounds === 'function') {
-            if (markers.length > 0) {
-                try {
-                    const bounds = markerLayerGroupRef.current.getBounds();
-                    // Check if bounds are valid (contain at least one point)
-                    if (bounds.isValid()) {
-                        mapRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
-                    } else {
-                        // Handle cases where bounds might be invalid even with markers (e.g., single marker at 0,0?)
-                        if (markers.length === 1) {
-                            mapRef.current.setView(markers[0].getLatLng(), 15); // Center on the single marker
-                        } else if (!kmlLayerRef.current) {
-                             mapRef.current.setView([46.2276, 2.2137], 6); // Reset view if no KML
-                        }
-                         console.warn("[InteractiveMap] Marker bounds are invalid despite having markers. Length:", markers.length);
-                    }
-                } catch (boundsError) {
-                    // Catch potential errors during getBounds or fitBounds
-                    console.error("[InteractiveMap] Error fitting map bounds to markers:", boundsError);
-                }
-            } else if (!kmlLayerRef.current) { // No markers and no KML layer
-                mapRef.current.setView([46.2276, 2.2137], 6); // Reset view
-            }
-            // If KML is loaded but no markers, do nothing - let KML define view or keep initial view
-        } else {
-             console.warn("[InteractiveMap] Cannot fit bounds: markerLayerGroupRef.current is not a valid LayerGroup or getBounds is missing.");
-        }
+    if (!mapRef.current || geocodingIsLoading) {
+        return; // Don't adjust bounds if map isn't ready or geocoding is happening
     }
-  }, [markers, geocodingIsLoading, kmlLayerRef.current]); // Dependencies
+
+    const hasMarkers = markers.length > 0;
+    const hasKml = kmlLayerRef.current !== null;
+
+    if (hasMarkers && markerLayerGroupRef.current instanceof L.LayerGroup && typeof markerLayerGroupRef.current.getBounds === 'function') {
+        // Prioritize fitting to markers if they exist
+        try {
+            const markerBounds = markerLayerGroupRef.current.getBounds();
+            if (markerBounds.isValid()) {
+                console.log("[InteractiveMap] Fitting bounds to markers.");
+                mapRef.current.fitBounds(markerBounds, { padding: [50, 50], maxZoom: 15 });
+            } else {
+                console.warn("[InteractiveMap] Marker bounds are invalid despite having markers. Length:", markers.length);
+                // Fallback for invalid marker bounds (e.g., single marker)
+                if (markers.length === 1) {
+                    mapRef.current.setView(markers[0].getLatLng(), 15);
+                } else if (!hasKml) { // Only reset if KML also isn't there
+                    mapRef.current.setView([46.2276, 2.2137], 6);
+                }
+            }
+        } catch (boundsError) {
+            console.error("[InteractiveMap] Error fitting map bounds to markers:", boundsError);
+        }
+    } else if (hasKml && kmlLayerRef.current instanceof L.GeoJSON && typeof kmlLayerRef.current.getBounds === 'function') {
+        // If no markers, fit to KML bounds if KML exists
+        try {
+            const kmlBounds = kmlLayerRef.current.getBounds();
+            if (kmlBounds.isValid()) {
+                console.log("[InteractiveMap] No markers, fitting bounds to KML layer.");
+                mapRef.current.fitBounds(kmlBounds, { padding: [50, 50] });
+            } else {
+                console.warn("[InteractiveMap] KML bounds are invalid. Resetting view.");
+                mapRef.current.setView([46.2276, 2.2137], 6); // Reset view if KML bounds invalid
+            }
+        } catch (boundsError) {
+            console.error("[InteractiveMap] Error fitting map bounds to KML:", boundsError);
+            mapRef.current.setView([46.2276, 2.2137], 6); // Reset on error
+        }
+    } else if (!hasMarkers && !hasKml) {
+        // If neither markers nor KML are present, reset view
+        console.log("[InteractiveMap] No markers or KML layer, resetting view.");
+        mapRef.current.setView([46.2276, 2.2137], 6);
+    }
+    // If hasKml but no markers, the initial KML load effect already handled fitting bounds.
+
+  }, [markers, geocodingIsLoading, kmlLayerRef.current]); // Re-run when markers, loading state, or KML layer ref changes
 
 
   if (geocodingError) {
