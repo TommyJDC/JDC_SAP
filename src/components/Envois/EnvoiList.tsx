@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { fetchEnvois } from '../../services/firebaseService';
+import { fetchEnvois, deleteMultipleEnvois } from '../../services/firebaseService';
 
 interface Envoi {
   id: string;
@@ -36,6 +36,8 @@ const EnvoiList: React.FC<EnvoiListProps> = ({ selectedSector, onEnvoiSelect }) 
   const [allEnvois, setAllEnvois] = useState<Envoi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<string | null>(null);
 
   useEffect(() => {
     const loadEnvois = async () => {
@@ -73,6 +75,36 @@ const EnvoiList: React.FC<EnvoiListProps> = ({ selectedSector, onEnvoiSelect }) 
     return grouped;
   }, [filteredEnvois]);
 
+  // Handle client deletion
+  const handleDeleteClient = async (clientName: string, envois: Envoi[]) => {
+    setDeleteConfirmation(clientName);
+  };
+
+  // Confirm deletion
+  const confirmDeleteClient = async (clientName: string, envois: Envoi[]) => {
+    setIsDeleting(true);
+    try {
+      const envoiIds = envois.map(envoi => envoi.id);
+      await deleteMultipleEnvois(envoiIds);
+      
+      // Update local state to remove deleted envois
+      setAllEnvois(prev => prev.filter(envoi => !envoiIds.includes(envoi.id)));
+      
+      // Show success message
+      alert(`Les envois pour ${clientName} ont été supprimés avec succès.`);
+    } catch (err: any) {
+      setError(`Erreur lors de la suppression des envois: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
+      setDeleteConfirmation(null);
+    }
+  };
+
+  // Cancel deletion
+  const cancelDeleteClient = () => {
+    setDeleteConfirmation(null);
+  };
+
   if (loading) {
     return <div className="flex justify-center items-center p-4"><span className="loading loading-dots loading-lg"></span></div>;
   }
@@ -103,7 +135,41 @@ const EnvoiList: React.FC<EnvoiListProps> = ({ selectedSector, onEnvoiSelect }) 
       ) : (
         clientNames.map((clientName) => (
           <div key={clientName} className="mb-6 p-4 border rounded-lg shadow-sm bg-base-200">
-            <h3 className="text-xl font-semibold mb-3 sticky top-0 bg-base-200 py-2 z-10">{clientName} ({groupedEnvois[clientName].length})</h3>
+            <div className="flex justify-between items-center mb-3 sticky top-0 bg-base-200 py-2 z-10">
+              <h3 className="text-xl font-semibold">{clientName} ({groupedEnvois[clientName].length})</h3>
+              <button 
+                onClick={() => handleDeleteClient(clientName, groupedEnvois[clientName])}
+                className="btn btn-sm btn-error"
+                disabled={isDeleting}
+              >
+                {isDeleting ? <span className="loading loading-spinner loading-xs"></span> : 'Supprimer'}
+              </button>
+            </div>
+            
+            {/* Confirmation modal */}
+            {deleteConfirmation === clientName && (
+              <div className="bg-base-100 p-4 mb-4 rounded-lg border border-error">
+                <p className="font-bold text-error mb-2">Êtes-vous sûr de vouloir supprimer tous les envois pour {clientName}?</p>
+                <p className="mb-4">Cette action est irréversible et supprimera {groupedEnvois[clientName].length} envoi(s).</p>
+                <div className="flex justify-end gap-2">
+                  <button 
+                    onClick={cancelDeleteClient}
+                    className="btn btn-sm btn-ghost"
+                    disabled={isDeleting}
+                  >
+                    Annuler
+                  </button>
+                  <button 
+                    onClick={() => confirmDeleteClient(clientName, groupedEnvois[clientName])}
+                    className="btn btn-sm btn-error"
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? <span className="loading loading-spinner loading-xs"></span> : 'Confirmer'}
+                  </button>
+                </div>
+              </div>
+            )}
+            
             <div className="space-y-4">
               {groupedEnvois[clientName].map((envoi) => (
                 <div

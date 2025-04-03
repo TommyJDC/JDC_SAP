@@ -287,6 +287,31 @@ export const fetchEnvois = async () => {
   }
 };
 
+// Function to delete an envoi from Firestore
+export const deleteEnvoi = async (envoiId: string) => {
+  try {
+    await deleteDocument('Envoi', envoiId);
+    console.log(`[firebaseService] Envoi ${envoiId} deleted successfully.`);
+    return true;
+  } catch (error) {
+    console.error(`[firebaseService] Error deleting envoi ${envoiId}:`, error);
+    throw error;
+  }
+};
+
+// Function to delete multiple envois at once (for client deletion)
+export const deleteMultipleEnvois = async (envoiIds: string[]) => {
+  try {
+    const deletePromises = envoiIds.map(id => deleteDocument('Envoi', id));
+    await Promise.all(deletePromises);
+    console.log(`[firebaseService] Successfully deleted ${envoiIds.length} envois.`);
+    return true;
+  } catch (error) {
+    console.error(`[firebaseService] Error deleting multiple envois:`, error);
+    throw error;
+  }
+};
+
 // Function to fetch geocode from Firestore
 export const fetchGeocode = async (address: string) => {
   try {

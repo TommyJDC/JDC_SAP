@@ -4,21 +4,6 @@ import L from 'leaflet';
 import useGeoCoding from '../../hooks/useGeoCoding';
 import { kmlZones } from '../../utils/kmlZones';
 
-// Fix Leaflet default icon issue
-import icon from 'leaflet/dist/images/marker-icon.png';
-import iconShadow from 'leaflet/dist/images/marker-shadow.png';
-
-let DefaultIcon = L.icon({
-  iconUrl: icon,
-  shadowUrl: iconShadow,
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-});
-
-L.Marker.prototype.options.icon = DefaultIcon;
-
 interface Ticket {
   id: string;
   adresse?: string;
@@ -47,6 +32,17 @@ const defaultZoneStyle: L.PathOptions = {
   weight: 2,
   fillColor: '#3388ff',
   fillOpacity: 0.3,
+};
+
+// Create a circular marker icon function
+const createCircleMarker = (color: string = '#3388ff') => {
+  return L.divIcon({
+    className: 'custom-div-icon',
+    html: `<div style="background-color:${color}; width:15px; height:15px; border-radius:50%; border: 2px solid white;"></div>`,
+    iconSize: [15, 15],
+    iconAnchor: [7, 7],
+    popupAnchor: [0, -7]
+  });
 };
 
 const InteractiveMap: React.FC<InteractiveMapProps> = ({ tickets }) => {
@@ -160,12 +156,28 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({ tickets }) => {
           
           // Add marker if we have coordinates
           if (coordinates && mapRef.current) {
-            const marker = L.marker([coordinates.lat, coordinates.lng])
+            // Use circular marker icon based on ticket status
+            let markerColor = '#3388ff'; // Default blue
+            
+            // Change color based on ticket status if needed
+            if (ticket.statut) {
+              if (ticket.statut.toLowerCase().includes('en cours')) {
+                markerColor = '#FFA500'; // Orange for in progress
+              } else if (ticket.statut.toLowerCase().includes('terminé')) {
+                markerColor = '#4CAF50'; // Green for completed
+              } else if (ticket.statut.toLowerCase().includes('annulé')) {
+                markerColor = '#F44336'; // Red for cancelled
+              }
+            }
+            
+            const circleIcon = createCircleMarker(markerColor);
+            
+            const marker = L.marker([coordinates.lat, coordinates.lng], { icon: circleIcon })
               .bindPopup(`<b>${ticket.raisonSociale || 'Sans nom'}</b><br/>${ticket.adresse}<br/>Statut: ${ticket.statut || 'Non défini'}`);
             
             marker.addTo(mapRef.current);
             markersRef.current.push(marker);
-            console.log(`[InteractiveMap] Added marker for: ${ticket.adresse}`);
+            console.log(`[InteractiveMap] Added circular marker for: ${ticket.adresse}`);
           }
         } catch (error) {
           console.error(`[InteractiveMap] Error processing ticket: ${ticket.id}`, error);
@@ -173,7 +185,7 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({ tickets }) => {
       }
       
       processingRef.current = false;
-      console.log(`[InteractiveMap] Added ${markersRef.current.length} markers to map`);
+      console.log(`[InteractiveMap] Added ${markersRef.current.length} circular markers to map`);
     };
     
     addMarkersToMap();
