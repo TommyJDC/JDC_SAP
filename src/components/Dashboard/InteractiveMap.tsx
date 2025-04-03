@@ -1,9 +1,23 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-// @ts-ignore - No types available for leaflet-omnivore, suppress TS error
-import omnivore from 'leaflet-omnivore';
 import useGeoCoding from '../../hooks/useGeoCoding';
+import { kmlZones } from '../../utils/kmlZones';
+
+// Fix Leaflet default icon issue
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+
+let DefaultIcon = L.icon({
+  iconUrl: icon,
+  shadowUrl: iconShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+L.Marker.prototype.options.icon = DefaultIcon;
 
 interface Ticket {
   id: string;
@@ -17,82 +31,90 @@ interface InteractiveMapProps {
   tickets: Ticket[];
 }
 
-// --- KML Style Mapping ---
-const kmlStyleMap: { [key: string]: L.PathOptions } = {
-  '#poly-000000-1200-77-nodesc': { color: '#000000', weight: 1.2, fillColor: '#000000', fillOpacity: 0.5 },
-  '#poly-097138-1200-77-nodesc': { color: '#097138', weight: 1.2, fillColor: '#097138', fillOpacity: 0.5 },
-  '#poly-9C27B0-1200-77-nodesc': { color: '#9C27B0', weight: 1.2, fillColor: '#9C27B0', fillOpacity: 0.5 },
-  '#poly-9FA8DA-1200-77-nodesc': { color: '#9FA8DA', weight: 1.2, fillColor: '#9FA8DA', fillOpacity: 0.5 },
-  '#poly-E65100-1200-77-nodesc': { color: '#E65100', weight: 1.2, fillColor: '#E65100', fillOpacity: 0.5 },
-  '#poly-FFEA00-1200-77-nodesc': { color: '#FFEA00', weight: 1.2, fillColor: '#FFEA00', fillOpacity: 0.5 },
+// Zone colors mapping by name
+const zoneColorMap: { [key: string]: L.PathOptions } = {
+  'Baptiste': { color: '#097138', weight: 2, fillColor: '#097138', fillOpacity: 0.3 },
+  'julien Isère': { color: '#9C27B0', weight: 2, fillColor: '#9C27B0', fillOpacity: 0.3 },
+  'Julien': { color: '#E65100', weight: 2, fillColor: '#E65100', fillOpacity: 0.3 },
+  'Florian': { color: '#FFEA00', weight: 2, fillColor: '#FFEA00', fillOpacity: 0.3 },
+  'Matthieu': { color: '#9FA8DA', weight: 2, fillColor: '#9FA8DA', fillOpacity: 0.3 },
+  'Guillem': { color: '#000000', weight: 2, fillColor: '#000000', fillOpacity: 0.3 },
 };
 
-const defaultKmlStyle: L.PathOptions = {
+// Default style for zones without a specific color
+const defaultZoneStyle: L.PathOptions = {
   color: '#3388ff',
-  weight: 3,
+  weight: 2,
   fillColor: '#3388ff',
-  fillOpacity: 0.5,
+  fillOpacity: 0.3,
 };
 
 const InteractiveMap: React.FC<InteractiveMapProps> = ({ tickets }) => {
+  const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const markerLayerGroupRef = useRef<L.LayerGroup | null>(null);
-  const kmlLayerRef = useRef<L.GeoJSON | null>(null);
-  const kmlLabelLayerGroupRef = useRef<L.LayerGroup | null>(null);
-  const [kmlError, setKmlError] = useState<string | null>(null);
+  const markersRef = useRef<L.Marker[]>([]);
+  const zonesLayerRef = useRef<L.GeoJSON | null>(null);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const { geocode } = useGeoCoding();
+  const [mapReady, setMapReady] = useState(false);
+  const geocodedAddressesRef = useRef<Map<string, { lat: number, lng: number }>>(new Map());
+  const processingRef = useRef<boolean>(false);
 
-  // Map Initialization Effect
+  // Initialize map only once
   useEffect(() => {
-    if (mapRef.current) return;
+    if (!mapContainerRef.current || mapRef.current) return;
 
-    const newMap = L.map('map').setView([46.2276, 2.2137], 6);
+    console.log("[InteractiveMap] Initializing map...");
+    const map = L.map(mapContainerRef.current).setView([46.2276, 2.2137], 6);
 
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    }).addTo(newMap);
+    }).addTo(map);
 
-    mapRef.current = newMap;
-    markerLayerGroupRef.current = L.layerGroup().addTo(newMap);
-    kmlLabelLayerGroupRef.current = L.layerGroup().addTo(newMap);
-
-    // --- Load KML Data ---
-    setKmlError(null);
-    const kmlUrl = '/secteurs.kml'; 
-    console.log(`[InteractiveMap] Loading KML from: ${kmlUrl}`);
-
-    const kmlLayer = omnivore.kml(kmlUrl)
-      .on('ready', function(this: L.GeoJSON) {
-        console.log('[InteractiveMap] KML loaded successfully');
-        kmlLayerRef.current = this;
-        
-        this.eachLayer((layer: any) => {
-          if (layer.feature?.properties) {
-            const sectorName = layer.feature.properties.name;
-            const styleUrl = layer.feature.properties.styleUrl;
-
-            if (sectorName) {
-              layer.bindPopup(`<b>Secteur:</b> ${sectorName}`);
-              
-              const appliedStyle = styleUrl && kmlStyleMap[styleUrl] 
-                ? kmlStyleMap[styleUrl] 
-                : defaultKmlStyle;
-              
-              if (typeof layer.setStyle === 'function') {
-                layer.setStyle(appliedStyle);
-              }
-            }
+    mapRef.current = map;
+    
+    // Add the GeoJSON zones with proper colors
+    try {
+      const zonesLayer = L.geoJSON([], {
+        style: (feature) => {
+          if (feature.properties && feature.properties.name) {
+            const zoneName = feature.properties.name;
+            return zoneColorMap[zoneName] || defaultZoneStyle;
           }
-        });
-
-        this.addTo(mapRef.current!);
-      })
-      .on('error', (e: any) => {
-        console.error('[InteractiveMap] KML loading error:', e);
-        setKmlError(`Erreur de chargement KML: ${e?.message || 'Erreur inconnue'}`);
+          return defaultZoneStyle;
+        },
+        onEachFeature: (feature, layer) => {
+          if (feature.properties && feature.properties.name) {
+            layer.bindPopup(`<b>Secteur:</b> ${feature.properties.name}`);
+          }
+        }
       });
+      
+      // Add each zone from our kmlZones utility
+      kmlZones.forEach(zone => {
+        zonesLayer.addData(zone.feature);
+      });
+      
+      zonesLayer.addTo(map);
+      zonesLayerRef.current = zonesLayer;
+      
+      // Fit map to zones bounds
+      if (zonesLayer.getBounds().isValid()) {
+        map.fitBounds(zonesLayer.getBounds());
+      }
+      
+      console.log("[InteractiveMap] Added GeoJSON zones to map with proper colors");
+    } catch (error) {
+      console.error("[InteractiveMap] Error adding GeoJSON zones:", error);
+      setMapError("Erreur lors du chargement des zones");
+    }
+    
+    setMapReady(true);
+    console.log("[InteractiveMap] Map initialized");
 
     return () => {
+      console.log("[InteractiveMap] Cleaning up map");
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -100,7 +122,76 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({ tickets }) => {
     };
   }, []);
 
-  // ... [rest of the component code]
+  // Process tickets and add markers
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    
+    const addMarkersToMap = async () => {
+      if (processingRef.current) return;
+      processingRef.current = true;
+      
+      console.log(`[InteractiveMap] Processing ${tickets.length} tickets for markers`);
+      
+      // Clear existing markers first
+      markersRef.current.forEach(marker => {
+        if (mapRef.current) marker.remove();
+      });
+      markersRef.current = [];
+      
+      // Process each ticket
+      for (const ticket of tickets) {
+        if (!ticket.adresse) continue;
+        
+        try {
+          // Check if we already geocoded this address
+          let coordinates;
+          if (geocodedAddressesRef.current.has(ticket.adresse)) {
+            coordinates = geocodedAddressesRef.current.get(ticket.adresse);
+            console.log(`[InteractiveMap] Using cached coordinates for: ${ticket.adresse}`, coordinates);
+          } else {
+            // Geocode the address
+            const result = await geocode(ticket.adresse);
+            if (result) {
+              coordinates = { lat: result.latitude, lng: result.longitude };
+              geocodedAddressesRef.current.set(ticket.adresse, coordinates);
+              console.log(`[InteractiveMap] Geocoded address: ${ticket.adresse}`, coordinates);
+            }
+          }
+          
+          // Add marker if we have coordinates
+          if (coordinates && mapRef.current) {
+            const marker = L.marker([coordinates.lat, coordinates.lng])
+              .bindPopup(`<b>${ticket.raisonSociale || 'Sans nom'}</b><br/>${ticket.adresse}<br/>Statut: ${ticket.statut || 'Non défini'}`);
+            
+            marker.addTo(mapRef.current);
+            markersRef.current.push(marker);
+            console.log(`[InteractiveMap] Added marker for: ${ticket.adresse}`);
+          }
+        } catch (error) {
+          console.error(`[InteractiveMap] Error processing ticket: ${ticket.id}`, error);
+        }
+      }
+      
+      processingRef.current = false;
+      console.log(`[InteractiveMap] Added ${markersRef.current.length} markers to map`);
+    };
+    
+    addMarkersToMap();
+  }, [tickets, mapReady, geocode]);
+
+  return (
+    <div className="relative">
+      <div 
+        ref={mapContainerRef}
+        className="w-full h-[500px] rounded-lg"
+      ></div>
+      {mapError && (
+        <div className="absolute top-2 right-2 bg-red-100 text-red-700 px-4 py-2 rounded">
+          {mapError}
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default InteractiveMap;

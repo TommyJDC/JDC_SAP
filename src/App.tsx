@@ -40,14 +40,14 @@ function App() {
           {/* Adjusted padding for main content area */}
           <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex-grow fade-in">
             <Routes>
-              <Route path="/" element={<DashboardPage />} />
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/sap" element={<SAPPage />} />
-              <Route path="/sap/create" element={<CreateTicketPage />} />
-              <Route path="/envois" element={<EnvoisPage />} />
-              <Route path="/admin" element={<AdminPage />} />
+              <Route path="/" element=<DashboardPage /> />
+              <Route path="/dashboard" element=<DashboardPage /> />
+              <Route path="/sap" element=<SAPPage /> />
+              <Route path="/sap/create" element=<CreateTicketPage /> />
+              <Route path="/envois" element=<EnvoisPage /> />
+              <Route path="/admin" element=<AdminPage /> />
               {/* Redirect authenticated users away from /auth */}
-              <Route path="/auth" element={<DashboardPage />} />
+              <Route path="/auth" element=<DashboardPage /> />
             </Routes>
           </main>
           {/* Optional Footer */}
