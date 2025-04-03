@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { listenToCollection } from '../../services/firebaseService'; // Keep for unique secteurs/statuses if needed
+import { listenToCollection, fetchEnvois } from '../../services/firebaseService'; // Import fetchEnvois
 import EnvoiList from '../../components/Envois/EnvoiList';
 import EnvoiDetails from '../../components/Envois/EnvoiDetails';
-import { FaFilter, FaTimes } from 'react-icons/fa';
+import { FaFilter, FaTimes, FaRedo } from 'react-icons/fa'; // Import FaRedo
 
 // Define the structure of an Envoi object (can be simplified if only used for details)
 interface Envoi {
@@ -18,6 +18,9 @@ interface Envoi {
 const EnvoisPage: React.FC = () => {
   // State for selected envoi and details modal
   const [selectedEnvoi, setSelectedEnvoi] = useState<Envoi | null>(null);
+  const [envois, setEnvois] = useState<Envoi[]>([]); // State to hold envois for the list
+  const [loadingEnvois, setLoadingEnvois] = useState<boolean>(true); // Loading state for Envois list
+  const [error, setError] = useState<string | null>(null); // ADD ERROR STATE
 
   // State for filters
   const [searchTermClient, setSearchTermClient] = useState(''); // Not currently used by EnvoiList
@@ -30,8 +33,24 @@ const EnvoisPage: React.FC = () => {
   const [allEnvoisForFilters, setAllEnvoisForFilters] = useState<Envoi[]>([]);
   const [loadingFilters, setLoadingFilters] = useState<boolean>(true);
 
-  // Fetch all envois *once* just to populate filter dropdowns
+  // --- Fetching Envois Data ---
+  const loadEnvois = useCallback(async () => {
+    setLoadingEnvois(true);
+    try {
+      const fetchedEnvois = await fetchEnvois();
+      setEnvois(fetchedEnvois as Envoi[]);
+      setError(null); // CLEAR ERROR ON SUCCESS
+    } catch (err: any) {
+      setError(`Erreur lors de la récupération des envois: ${err.message}`); // SET ERROR MESSAGE
+      setEnvois([]);
+    } finally {
+      setLoadingEnvois(false);
+    }
+  }, []);
+
+  // Initial load of envois and setup listener for filters
   useEffect(() => {
+    loadEnvois(); // Initial load
     setLoadingFilters(true);
     const unsubscribe = listenToCollection('Envoi', (allEnvois) => {
       setAllEnvoisForFilters(allEnvois);
@@ -42,7 +61,7 @@ const EnvoisPage: React.FC = () => {
       // Optionally set an error state for filters
     });
     return () => unsubscribe();
-  }, []);
+  }, [loadEnvois]); // loadEnvois in dependency array
 
 
   const handleSelectEnvoi = useCallback((envoi: Envoi) => {
@@ -52,6 +71,10 @@ const EnvoisPage: React.FC = () => {
   const handleCloseDetails = useCallback(() => {
     setSelectedEnvoi(null);
   }, []);
+
+  const handleRefreshEnvoisList = () => {
+    loadEnvois();
+  };
 
   // Callback if EnvoiDetails needs to trigger a refresh (implement if needed)
   const handleEnvoiUpdated = useCallback(() => {
@@ -89,12 +112,19 @@ const EnvoisPage: React.FC = () => {
   // Determine if any filter is active
   const filtersActive = searchTermClient || searchTermTracking || filterStatut || filterSecteur;
 
+  const filteredEnvois = useMemo(() => {
+    return envois.filter(envoi => {
+      return filterSecteur === '' || envoi.secteur === filterSecteur;
+    });
+  }, [envois, filterSecteur]);
+
+
   return (
     <>
       <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-8rem)]"> {/* Adjusted height */}
         {/* Left Panel: Filters and Envoi List */}
         {/* This panel is always visible */}
-        <div className="flex flex-col w-full lg:w-1/3"> {/* Ensure this flex-col container works correctly */}
+        <div className="flex flex-col w-full"> {/* Modified width to w-full */}
           {/* Filter Controls */}
           <div className="mb-4 card bg-base-100 shadow p-4 shrink-0"> {/* Added shrink-0 */}
             <div className="flex justify-between items-center mb-2">
@@ -106,6 +136,13 @@ const EnvoisPage: React.FC = () => {
                       title="Effacer les filtres"
                       >
                       <FaTimes /> Effacer
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={handleRefreshEnvoisList}
+                    title="Rafraîchir la liste des envois"
+                  >
+                    <FaRedo />
                   </button>
                   <button
                   className="btn btn-ghost btn-sm lg:hidden"
@@ -166,22 +203,24 @@ const EnvoisPage: React.FC = () => {
 
           {/* Envoi List Area */}
           {/* Added min-h-0 to help flexbox calculate height for overflow */}
-          <div className="flex-grow overflow-y-auto card bg-base-100 shadow p-4 w-full min-h-0">
+          <div className="scrollable-list flex-grow card bg-base-100 shadow p-4 w-full min-h-0" style={{ minHeight: 0, maxHeight: 'calc(100vh - 15rem)' }}>
+            {loadingEnvois && <div className="flex justify-center items-center h-full"><span className="loading loading-spinner loading-lg"></span></div>}
+            {error && <div className="alert alert-error text-sm p-2"><span>{error}</span></div>}
             {/* Pass the correct props */}
-            <EnvoiList
-              selectedSector={filterSecteur}
-              onEnvoiSelect={handleSelectEnvoi}
-              // Pass selectedEnvoiId if highlighting is needed in EnvoiList
-              // selectedEnvoiId={selectedEnvoi?.id}
-            />
+            {!loadingEnvois && !error && (
+              <EnvoiList
+                envois={filteredEnvois} // Pass filtered envois
+                selectedSector={filterSecteur}
+                onEnvoiSelect={handleSelectEnvoi}
+                // Pass selectedEnvoiId if highlighting is needed in EnvoiList
+                // selectedEnvoiId={selectedEnvoi?.id}
+              />
+            )}
           </div>
         </div>
 
-        {/* Right Panel: Placeholder ONLY */}
-        {/* This panel is hidden on small screens, visible on large */}
-        <div className="w-full lg:w-2/3 hidden lg:flex justify-center items-center h-full text-gray-500 card bg-base-100 shadow p-4">
-          Sélectionnez un envoi pour voir les détails.
-        </div>
+        {/* Right Panel: Placeholder REMOVED */}
+        {/* Removed right panel div */}
       </div>
 
        {/* Render EnvoiDetails as a Modal OUTSIDE the main layout */}

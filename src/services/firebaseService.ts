@@ -1,7 +1,7 @@
 import { db } from '../config/firebase';
 import { collection, getDocs, doc, getDoc, addDoc, updateDoc, deleteDoc, query, where, getCountFromServer, onSnapshot, Unsubscribe } from 'firebase/firestore'; // Import Unsubscribe
 
-// --- Existing Functions (fetchCollection, fetchDocument, addDocument, updateDocument, deleteDocument, fetchSectors) ---
+// --- Existing Functions (fetchCollection, fetchDocument, updateDocument, deleteDocument, fetchSectors) ---
 // Generic function to fetch all documents from a collection
 export const fetchCollection = async (collectionName: string) => {
   try {
@@ -33,38 +33,52 @@ export const fetchDocument = async (collectionName: string, documentId: string) 
 // Generic function to add a new document to a collection
 export const addDocument = async (collectionName: string, data: any) => {
   try {
-    // Check if the collection is one of the SAP sectors
     const sapSectors = ['CHR', 'HACCP', 'Kezia', 'Tabac'];
-    let newData = { ...data };
-    let initialStatus = data.statut; // Get provided status or undefined
+    let newData = { ...data }; // Start with a copy of the original data
+    let finalStatus = data.statut; // Get provided status if any
 
-    // Determine initial status for SAP sectors
+    // Determine initial status logic, especially for SAP sectors
     if (sapSectors.includes(collectionName)) {
-        // Check for RMA condition first
-        if (data.demandeSAP?.toLowerCase().includes('demande de rma')) {
-            initialStatus = 'Demande de RMA';
-        } else if (!initialStatus) {
-            // Set default only if no status provided and not RMA
-            initialStatus = 'en cours';
-        }
-        newData = { ...data, statut: initialStatus };
+      // Check for RMA condition first
+      if (data.demandeSAP?.toLowerCase().includes('demande de rma')) {
+        finalStatus = 'Demande de RMA';
+      } else if (!finalStatus) {
+        // Set default status for SAP tickets ONLY if no status was provided and it's not RMA
+        finalStatus = 'Nouveau'; // Default status for new SAP tickets
+      }
+    } else if (!finalStatus) {
+        // Optional: Set a default status for non-SAP collections if none provided
+        // finalStatus = 'Pending'; // Example
     }
 
+    // Ensure the final status is included in the data to be saved
+    // This merges the original data with the determined status (overwriting if status existed)
+    newData = { ...data, statut: finalStatus };
+
+    // Add the creation date if not already present
+    if (!newData.dateCreation) {
+        newData.dateCreation = new Date().toISOString();
+    }
+
+    console.log(`[firebaseService] Attempting to add document to ${collectionName} with data:`, newData); // Log the data being sent
 
     const docRef = await addDoc(collection(db, collectionName), newData);
-    console.log(`Document added to ${collectionName} with ID: ${docRef.id} and status: ${initialStatus}`);
+    console.log(`[firebaseService] Document successfully added to ${collectionName} with ID: ${docRef.id} and status: ${finalStatus}`);
     return docRef.id;
   } catch (error) {
-    console.error(`Error adding document to ${collectionName}:`, error);
+    console.error(`[firebaseService] Error adding document to ${collectionName}:`, error);
+    console.error(`[firebaseService] Data attempted:`, data); // Log data on error
     throw error;
   }
 };
+
 
 // Generic function to update a document in a collection
 export const updateDocument = async (collectionName: string, documentId: string, data: any) => {
   try {
     const docRef = doc(db, collectionName, documentId);
     await updateDoc(docRef, data);
+    console.log(`[firebaseService] Document ${documentId} in ${collectionName} updated successfully.`);
   } catch (error) {
     console.error(`Error updating document ${documentId} in ${collectionName}:`, error);
     throw error;
@@ -76,6 +90,7 @@ export const deleteDocument = async (collectionName: string, documentId: string)
   try {
     const docRef = doc(db, collectionName, documentId);
     await deleteDoc(docRef);
+     console.log(`[firebaseService] Document ${documentId} from ${collectionName} deleted successfully.`);
   } catch (error) {
     console.error(`Error deleting document ${documentId} from ${collectionName}:`, error);
     throw error;
@@ -92,7 +107,7 @@ export const fetchSectors = async () => {
       { id: 'Kezia' },
       { id: 'Tabac' },
     ];
-    console.log("Sectors data fetched:", sectorsData);
+    // console.log("Sectors data fetched:", sectorsData); // Less verbose logging
     return sectorsData;
   } catch (error) {
     console.error("Error fetching sectors:", error);
@@ -115,8 +130,7 @@ export const listenToCollection = (collectionName: string, callback: (data: any[
     callback(documents);
   }, (error) => {
     console.error(`Error listening to collection ${collectionName}:`, error);
-    // Optionally, inform the user or trigger specific error handling in the callback
-    callback([]); // Send empty array on error or handle differently
+    callback([]); // Send empty array on error
   });
   return unsubscribe;
 };
@@ -135,15 +149,11 @@ export const listenToTicketsBySector = (sectorId: string, callback: (tickets: an
     const tickets: any[] = [];
     const updatePromises: Promise<void>[] = []; // Store update promises
 
-    console.log(`[firebaseService] Received snapshot for sector ${sectorId} with ${querySnapshot.docs.length} docs.`); // *** ADDED LOG ***
+    // console.log(`[firebaseService] Received snapshot for sector ${sectorId} with ${querySnapshot.docs.length} docs.`); // Less verbose
 
     querySnapshot.docs.forEach((docSnap) => {
       const ticketData = docSnap.data();
-      // *** ADDED DETAILED LOG for each ticket ***
-      console.log(`[firebaseService] Processing ticket ${docSnap.id} in sector ${sectorId}. Raw data:`, ticketData);
-      console.log(`[firebaseService]   >> Does it have 'Adresse'?`, ticketData.hasOwnProperty('Adresse'));
-      console.log(`[firebaseService]   >> Value of 'Adresse':`, ticketData.Adresse);
-      // *** END ADDED LOG ***
+      // console.log(`[firebaseService] Processing ticket ${docSnap.id} in sector ${sectorId}. Raw data:`, ticketData); // Less verbose
 
       let currentStatus = ticketData.statut; // Get current status
 
@@ -152,14 +162,12 @@ export const listenToTicketsBySector = (sectorId: string, callback: (tickets: an
       const isNotRmaStatus = currentStatus !== 'Demande de RMA';
 
       if (needsRmaStatus && isNotRmaStatus) {
-        // If demandeSAP indicates RMA but status isn't set correctly, update it
-        currentStatus = 'Demande de RMA'; // Update local status for immediate return
-        // Asynchronously update the document in Firestore (no need to await here for real-time)
+        currentStatus = 'Demande de RMA';
         updatePromises.push(updateDoc(docSnap.ref, { statut: currentStatus }));
         console.log(`Updating ticket ${docSnap.id} in sector ${sectorId} to status: ${currentStatus} based on demandeSAP.`);
       } else if (!currentStatus) {
         // If status is missing entirely, set default and update
-        currentStatus = 'en cours'; // Default status
+        currentStatus = 'Nouveau'; // Default status if missing (consistent with addDocument)
         updatePromises.push(updateDoc(docSnap.ref, { statut: currentStatus }));
         console.log(`Updating ticket ${docSnap.id} in sector ${sectorId} to default status: ${currentStatus} as it was missing.`);
       }
@@ -172,10 +180,8 @@ export const listenToTicketsBySector = (sectorId: string, callback: (tickets: an
       });
     });
 
-    // Call the callback immediately with the processed tickets
     callback(tickets);
 
-    // Handle updates in the background if any were needed
     if (updatePromises.length > 0) {
       Promise.all(updatePromises)
         .then(() => console.log(`Finished background status updates for sector ${sectorId}.`))
@@ -212,11 +218,11 @@ export const fetchTicketsBySector = async (sectorId: string) => {
       if (needsRmaStatus && isNotRmaStatus) {
         currentStatus = 'Demande de RMA';
         updatePromises.push(updateDoc(docSnap.ref, { statut: currentStatus }));
-        console.log(`Updating ticket ${docSnap.id} in sector ${sectorId} to status: ${currentStatus} based on demandeSAP.`);
+        // console.log(`Updating ticket ${docSnap.id} in sector ${sectorId} to status: ${currentStatus} based on demandeSAP.`);
       } else if (!currentStatus) {
-        currentStatus = 'en cours';
+        currentStatus = 'Nouveau'; // Default status if missing
         updatePromises.push(updateDoc(docSnap.ref, { statut: currentStatus }));
-        console.log(`Updating ticket ${docSnap.id} in sector ${sectorId} to default status: ${currentStatus} as it was missing.`);
+        // console.log(`Updating ticket ${docSnap.id} in sector ${sectorId} to default status: ${currentStatus} as it was missing.`);
       }
 
       tickets.push({
@@ -228,7 +234,7 @@ export const fetchTicketsBySector = async (sectorId: string) => {
     }
 
     await Promise.all(updatePromises);
-    console.log(`Finished processing and potential updates for ${tickets.length} tickets in sector ${sectorId}.`);
+    // console.log(`Finished processing and potential updates for ${tickets.length} tickets in sector ${sectorId}.`); // Less verbose
 
     return tickets;
 
@@ -304,6 +310,13 @@ export const storeGeocode = async (address: string, latitude: number, longitude:
   console.log(`Storing geocode for address: ${address} with coordinates: ${latitude}, ${longitude}`);
   try {
     const geocodesCollection = collection(db, 'geocodes');
+    // Check if geocode already exists for this address
+    const existingGeocode = await fetchGeocode(address);
+    if (existingGeocode) {
+        console.log(`Geocode already exists for address: ${address}. Skipping storage.`);
+        return; // Don't store duplicates
+    }
+    // If not found, add it
     await addDoc(geocodesCollection, {
       address: address,
       latitude: latitude,
@@ -315,6 +328,7 @@ export const storeGeocode = async (address: string, latitude: number, longitude:
     console.error("Error storing geocode in Firestore:", error);
   }
 };
+
 
 // Function to fetch users from Firestore
 export const fetchUsers = async () => {

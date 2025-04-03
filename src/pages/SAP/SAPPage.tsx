@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { fetchSectors, listenToTicketsBySector } from '../../services/firebaseService';
+import { fetchSectors, listenToTicketsBySector, fetchTicketsBySector } from '../../services/firebaseService'; // Import fetchTicketsBySector
 import TicketList from '../../components/Tickets/TicketList';
 import TicketDetails from '../../components/Tickets/TicketDetails';
-import { FaFilter, FaTimes, FaUserTie } from 'react-icons/fa'; // Added FaUserTie
+import { FaFilter, FaTimes, FaUserTie, FaRedo } from 'react-icons/fa'; // Added FaUserTie and FaRedo
 import useGeoCoding from '../../hooks/useGeoCoding'; // Import useGeoCoding
 import { kmlZones } from '../../utils/kmlZones'; // Import KML zones
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
@@ -32,6 +32,8 @@ const SAPPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
+  const [loadingTickets, setLoadingTickets] = useState<boolean>(true); // Loading state for tickets list
+
 
   const [searchTermRaisonSociale, setSearchTermRaisonSociale] = useState('');
   const [searchTermCodeClient, setSearchTermCodeClient] = useState('');
@@ -55,6 +57,25 @@ const SAPPage: React.FC = () => {
   const { coordinates: fetchedCoordinates, isLoading: geocodingIsLoading, error: geocodingError } = useGeoCoding(addressesToGeocode);
   // --- End Geocoding Logic ---
 
+  // --- Fetching Tickets Data ---
+  const loadTickets = useCallback(async (sector: string) => {
+    if (!sector) return; // Exit if no sector selected
+    setLoadingTickets(true);
+    setError(null);
+    try {
+      const fetchedTickets = await fetchTicketsBySector(sector);
+      setTickets(fetchedTickets);
+      setError(null);
+    } catch (err) {
+      console.error(`Error loading tickets for sector ${sector}:`, err);
+      setError(`Erreur de chargement des tickets pour ${sector}.`);
+      setTickets([]);
+    } finally {
+      setLoadingTickets(false);
+    }
+  }, []);
+
+
   // Fetch sectors on component mount
   useEffect(() => {
     const loadSectors = async () => {
@@ -76,7 +97,7 @@ const SAPPage: React.FC = () => {
     loadSectors();
   }, []);
 
-  // Listen to tickets when selectedSector or dataVersion changes
+  // Listen to tickets when selectedSector or dataVersion changes (REALTIME updates)
   useEffect(() => {
     if (!selectedSector) {
       setTickets([]);
@@ -176,11 +197,18 @@ const SAPPage: React.FC = () => {
     const newSector = event.target.value;
     console.log("Sector changed to:", newSector);
     setSelectedSector(newSector);
+    loadTickets(newSector); // Load tickets for the newly selected sector
     setSearchTermRaisonSociale('');
     setSearchTermCodeClient('');
     setSearchTermNumeroSAP('');
     setFilterStatut('');
     setSelectedTicket(null);
+  };
+
+  const handleRefreshTicketsList = () => {
+    if (selectedSector) {
+      loadTickets(selectedSector);
+    }
   };
 
   // Filter the tickets *after* salesperson assignment
@@ -222,7 +250,7 @@ const SAPPage: React.FC = () => {
   return (
     <>
       <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-8rem)]">
-         <div className="flex flex-col w-full lg:w-1/3">
+         <div className="flex flex-col w-full"> {/* Modified width to w-full */}
           {/* Sector Selector */}
           <div className="mb-4 card bg-base-100 shadow p-4 shrink-0">
             <label htmlFor="sector-select" className="label font-semibold">Secteur SAP</label>
@@ -253,6 +281,13 @@ const SAPPage: React.FC = () => {
                     title="Effacer les filtres"
                     >
                     <FaTimes /> Effacer
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={handleRefreshTicketsList}
+                  title="Rafraîchir la liste des tickets"
+                >
+                  <FaRedo />
                 </button>
                 <button
                   className="btn btn-ghost btn-sm lg:hidden"
@@ -306,10 +341,10 @@ const SAPPage: React.FC = () => {
           </div>
 
           {/* Ticket List Area */}
-          <div className="flex-grow overflow-y-auto card bg-base-100 shadow p-4 w-full min-h-0">
-            {(loading || (geocodingIsLoading && tickets.length > 0)) && <div className="flex justify-center items-center h-full"><span className="loading loading-spinner loading-lg"></span></div>}
+          <div className="scrollable-list flex-grow card bg-base-100 shadow p-4 w-full min-h-0" style={{ minHeight: 0, maxHeight: 'calc(100vh - 15rem)' }}>
+            {(loading || (geocodingIsLoading && tickets.length > 0) || loadingTickets) && <div className="flex justify-center items-center h-full"><span className="loading loading-spinner loading-lg"></span></div>}
             {error && <div className="alert alert-error text-sm p-2"><span>{error}</span></div>}
-            {!loading && !error && selectedSector && (
+            {!loading && !error && selectedSector && !loadingTickets && (
               <TicketList
                 groupedTickets={groupedTickets} // Pass augmented and filtered tickets
                 onSelectTicket={handleSelectTicket}
@@ -317,19 +352,17 @@ const SAPPage: React.FC = () => {
                 groupByField="raisonSociale"
               />
             )}
-            {!loading && !error && !selectedSector && (
+            {!loading && !error && !selectedSector && !loadingTickets && (
               <p className="text-center text-gray-500">Veuillez sélectionner un secteur pour voir les tickets.</p>
             )}
-             {!loading && !error && selectedSector && Object.keys(groupedTickets).length === 0 && !geocodingIsLoading && (
+             {!loading && !error && selectedSector && Object.keys(groupedTickets).length === 0 && !geocodingIsLoading && !loadingTickets && (
                <p className="text-center text-gray-500">Aucun ticket trouvé pour les filtres actuels.</p>
              )}
           </div>
         </div>
 
-        {/* Right Panel: Placeholder ONLY */}
-        <div className="w-full lg:w-2/3 hidden lg:flex justify-center items-center h-full text-gray-500 card bg-base-100 shadow p-4">
-           Sélectionnez un ticket pour voir les détails.
-        </div>
+        {/* Right Panel: Placeholder REMOVED */}
+        {/* Removed right panel div */}
       </div>
 
       {/* Render TicketDetails as a Modal OUTSIDE the main layout */}

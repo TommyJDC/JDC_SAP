@@ -49,18 +49,18 @@ body {
 }
 
 .input, .select, .textarea {
-  @apply input-bordered w-full bg-base-300 border-base-content/20 focus:border-primary focus:ring-primary focus:ring-opacity-50;
+  @apply input-bordered w-full bg-base-100 border-base-content/20 focus:border-primary focus:ring-primary focus:ring-opacity-50; /* Changed background color to bg-base-100 */
 }
 
-/* Ensure container padding */
-.container {
-  @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6; /* Added vertical padding */
-}
+/* Ensure container padding - Adjusted in App.tsx */
+/* .container {
+  @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6;
+} */
 
-/* Navbar adjustments if needed (DaisyUI handles most) */
-.navbar {
-  @apply bg-base-200 shadow-md mb-6 rounded-box; /* Add margin bottom and rounded corners */
-}
+/* Navbar adjustments - Handled mostly by DaisyUI and Navbar.tsx */
+/* .navbar {
+  @apply bg-base-200 shadow-md mb-6 rounded-box;
+} */
 
 /* Active link styling */
 .navbar .active {
@@ -77,18 +77,8 @@ a {
   @apply w-5 h-5 mr-2; /* Consistent icon size */
 }
 
-/* Responsive adjustments */
-@media (max-width: 640px) {
-  .navbar .btn span {
-    @apply hidden; /* Hide text on small screens */
-  }
-  .navbar .btn .icon {
-    @apply mr-0; /* Remove margin when text is hidden */
-  }
-  .navbar-start .btn {
-    @apply text-lg; /* Slightly larger brand text */
-  }
-}
+/* Responsive adjustments for Navbar handled in Navbar.tsx */
+/* @media (max-width: 640px) { ... } */
 
 /* Fade-in Animation */
 .fade-in {
@@ -102,5 +92,21 @@ a {
 
 /* Dashboard Tiles */
 .dashboard-tile {
-  @apply card bg-base-200 p-6; /* Use card styles */
+  @apply card bg-base-200 p-4 md:p-6; /* Adjusted padding */
+}
+
+/* Responsive Table Wrapper */
+.table-responsive-wrapper {
+  @apply overflow-x-auto; /* Allows horizontal scrolling on small screens */
+}
+
+/* Ensure Leaflet map containers are responsive */
+.leaflet-container {
+  @apply w-full h-full min-h-[300px] md:min-h-[400px] lg:min-h-[500px]; /* Ensure map takes space */
+}
+
+/* Explicit styles for scrollable lists */
+.scrollable-list {
+  height: auto !important; /* Override other height settings if necessary */
+  overflow-y: scroll; /* Force scrollbar to be always visible */
 }
