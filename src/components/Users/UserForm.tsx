@@ -1,161 +1,174 @@
 import React, { useState, useEffect } from 'react';
-import { fetchSectors } from '../../services/firebaseService';
 
 interface UserFormProps {
+  user?: any;
   onSubmit: (userData: any) => void;
-  user?: any; // Optional user prop for editing existing users
+  onCancel: () => void;
 }
 
-const UserForm: React.FC<UserFormProps> = ({ onSubmit, user }) => {
-  const [sectors, setSectors] = useState([]);
-  const [loadingSectors, setLoadingSectors] = useState(true);
-  const [sectorsError, setSectorsError] = useState<string | null>(null);
+const UserForm: React.FC<UserFormProps> = ({ user, onSubmit, onCancel }) => {
   const [formData, setFormData] = useState({
-    nom: '',
     email: '',
     password: '',
-    role: 'Utilisateur', // Default role
-    secteurs: [],
+    nom: '',
+    role: 'Utilisateur',
+    secteurs: [] as string[]
   });
+  const [isEditing, setIsEditing] = useState(false);
 
-  useEffect(() => {
-    const loadSectors = async () => {
-      setLoadingSectors(true);
-      setSectorsError(null);
-      try {
-        const fetchedSectors = await fetchSectors();
-        setSectors(fetchedSectors);
-      } catch (err: any) {
-        setSectorsError(err.message || 'Failed to load sectors.');
-        console.error("Error fetching sectors:", err);
-      } finally {
-        setLoadingSectors(false);
-      }
-    };
-
-    loadSectors();
-  }, []);
+  // Available sectors
+  const availableSectors = ['CHR', 'HACCP', 'Kezia', 'Tabac'];
 
   useEffect(() => {
     if (user) {
+      setIsEditing(true);
       setFormData({
-        nom: user.nom || '',
         email: user.email || '',
-        password: '', // Password should not be pre-filled for security reasons
+        password: '', // Don't populate password for security
+        nom: user.nom || '',
         role: user.role || 'Utilisateur',
-        secteurs: user.secteurs || [],
+        secteurs: user.secteurs || []
+      });
+    } else {
+      setIsEditing(false);
+      setFormData({
+        email: '',
+        password: '',
+        nom: '',
+        role: 'Utilisateur',
+        secteurs: []
       });
     }
   }, [user]);
 
-  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = event.target;
-    setFormData({ ...formData, [name]: value });
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleSectorChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedOptions = Array.from(event.target.selectedOptions, option => option.value);
-    setFormData({ ...formData, secteurs: selectedOptions });
+  const handleSectorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { value, checked } = e.target;
+    setFormData(prev => {
+      if (checked) {
+        return { ...prev, secteurs: [...prev.secteurs, value] };
+      } else {
+        return { ...prev, secteurs: prev.secteurs.filter(sector => sector !== value) };
+      }
+    });
   };
 
-
-  const handleSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
     onSubmit(formData);
   };
 
-  if (loadingSectors) {
-    return <div>Loading sectors...</div>;
-  }
-
-  if (sectorsError) {
-    return <div className="alert alert-error">{sectorsError}</div>;
-  }
-
   return (
-    <form onSubmit={handleSubmit} className="card bg-base-100 shadow-xl">
-      <div className="card-body">
-        <h2 className="card-title">{user ? 'Modifier Utilisateur' : 'Ajouter un utilisateur'}</h2>
-        <div className="form-control">
-          <label className="label">
-            <span className="label-text">Nom</span>
-          </label>
-          <input
-            type="text"
-            placeholder="Nom"
-            className="input input-bordered"
-            name="nom"
-            value={formData.nom}
-            onChange={handleInputChange}
-            required
-          />
-        </div>
-        <div className="form-control">
+    <div className="bg-base-200 p-4 rounded-lg">
+      <h2 className="text-xl font-bold mb-4">
+        {isEditing ? `Modifier l'utilisateur: ${user?.nom || user?.email}` : 'Ajouter un nouvel utilisateur'}
+      </h2>
+      
+      <form onSubmit={handleSubmit}>
+        <div className="form-control mb-3">
           <label className="label">
             <span className="label-text">Email</span>
           </label>
           <input
             type="email"
+            name="email"
             placeholder="Email"
             className="input input-bordered"
-            name="email"
             value={formData.email}
-            onChange={handleInputChange}
+            onChange={handleChange}
             required
-            readOnly={!!user} // Make email read-only when editing user
+            disabled={isEditing} // Email cannot be changed for existing users
           />
         </div>
-        {!user && (
-          <div className="form-control">
-            <label className="label">
-              <span className="label-text">Mot de passe</span>
-            </label>
-            <input
-              type="password"
-              placeholder="Mot de passe"
-              className="input input-bordered"
-              name="password"
-              value={formData.password}
-              onChange={handleInputChange}
-              required
-            />
-          </div>
-        )}
-        <div className="form-control">
+        
+        <div className="form-control mb-3">
+          <label className="label">
+            <span className="label-text">
+              {isEditing ? 'Nouveau mot de passe (laisser vide pour ne pas changer)' : 'Mot de passe'}
+            </span>
+          </label>
+          <input
+            type="password"
+            name="password"
+            placeholder="Mot de passe"
+            className="input input-bordered"
+            value={formData.password}
+            onChange={handleChange}
+            required={!isEditing} // Required only for new users
+          />
+        </div>
+        
+        <div className="form-control mb-3">
+          <label className="label">
+            <span className="label-text">Nom</span>
+          </label>
+          <input
+            type="text"
+            name="nom"
+            placeholder="Nom"
+            className="input input-bordered"
+            value={formData.nom}
+            onChange={handleChange}
+            required
+          />
+        </div>
+        
+        <div className="form-control mb-3">
           <label className="label">
             <span className="label-text">Rôle</span>
           </label>
           <select
-            className="select select-bordered"
             name="role"
+            className="select select-bordered w-full"
             value={formData.role}
-            onChange={handleInputChange}
+            onChange={handleChange}
           >
-            <option>Utilisateur</option>
-            <option>Admin</option>
+            <option value="Utilisateur">Utilisateur</option>
+            <option value="Admin">Administrateur</option>
           </select>
         </div>
-        <div className="form-control">
+        
+        <div className="form-control mb-5">
           <label className="label">
             <span className="label-text">Secteurs</span>
           </label>
-          <select
-            className="select select-bordered"
-            name="secteurs"
-            multiple
-            value={formData.secteurs}
-            onChange={handleSectorChange}
-          >
-            {sectors.map(sector => (
-              <option key={sector.id} value={sector.id}>{sector.id}</option>
+          <div className="grid grid-cols-2 gap-2">
+            {availableSectors.map(sector => (
+              <label key={sector} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="checkbox"
+                  value={sector}
+                  checked={formData.secteurs.includes(sector)}
+                  onChange={handleSectorChange}
+                />
+                <span>{sector}</span>
+              </label>
             ))}
-          </select>
+          </div>
         </div>
-        <div className="card-actions justify-end mt-4">
-          <button type="submit" className="btn btn-primary">{user ? 'Modifier' : 'Ajouter'}</button>
+        
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={onCancel}
+          >
+            Annuler
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+          >
+            {isEditing ? 'Mettre à jour' : 'Ajouter'}
+          </button>
         </div>
-      </div>
-    </form>
+      </form>
+    </div>
   );
 };
 

@@ -1,5 +1,21 @@
-import { db } from '../config/firebase';
-import { collection, getDocs, doc, getDoc, addDoc, updateDoc, deleteDoc, query, where, getCountFromServer, onSnapshot, Unsubscribe } from 'firebase/firestore'; // Import Unsubscribe
+import { db, auth } from '../config/firebase';
+import { collection, getDocs, doc, getDoc, addDoc, updateDoc, deleteDoc, query, where, getCountFromServer, onSnapshot, Unsubscribe, setDoc } from 'firebase/firestore';
+import { 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  updateProfile,
+  User as FirebaseUser,
+  updatePassword,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  deleteUser,
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithRedirect
+} from 'firebase/auth';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 // --- Existing Functions (fetchCollection, fetchDocument, updateDocument, deleteDocument, fetchSectors) ---
 // Generic function to fetch all documents from a collection
@@ -354,13 +370,262 @@ export const storeGeocode = async (address: string, latitude: number, longitude:
   }
 };
 
+// Function to sign in with Google
+export const signInWithGoogle = async () => {
+  try {
+    const provider = new GoogleAuthProvider();
+    
+    // Utiliser signInWithRedirect au lieu de signInWithPopup
+    await signInWithRedirect(auth, provider);
+    
+    // Note: La redirection va se produire ici, donc le code après cette ligne
+    // ne sera pas exécuté immédiatement. Le résultat sera traité ailleurs.
+    return null;
+  } catch (error) {
+    console.error("Error signing in with Google:", error);
+    throw error;
+  }
+};
 
-// Function to fetch users from Firestore
+// Function to create a new user with Firebase Authentication and store user data in Firestore
+export const createUser = async (userData: { email: string; password: string; nom: string; role: string; secteurs: string[] }) => {
+  try {
+    console.log("[firebaseService] Creating new user with email:", userData.email);
+    
+    // Create user in Firebase Authentication
+    const userCredential = await createUserWithEmailAndPassword(auth, userData.email, userData.password);
+    const user = userCredential.user;
+    
+    // Update user profile with display name
+    await updateProfile(user, {
+      displayName: userData.nom
+    });
+    
+    // Store additional user data in Firestore
+    const userDocRef = doc(db, 'users', user.uid);
+    await setDoc(userDocRef, {
+      uid: user.uid,
+      email: userData.email,
+      nom: userData.nom,
+      role: userData.role,
+      secteurs: userData.secteurs,
+      dateCreation: new Date().toISOString()
+    });
+    
+    // Also store in auth_users collection for consistency
+    await setDoc(doc(db, 'auth_users', user.uid), {
+      email: userData.email,
+      nom: userData.nom,
+      role: userData.role,
+      dateCreation: new Date().toISOString(),
+      authProvider: 'email'
+    });
+    
+    console.log("[firebaseService] User created successfully:", user.uid);
+    return user.uid;
+  } catch (error: any) {
+    console.error("[firebaseService] Error creating user:", error);
+    throw error;
+  }
+};
+
+// Function to update a user's profile in both Authentication and Firestore
+export const updateUser = async (userId: string, userData: any, currentPassword?: string) => {
+  try {
+    console.log("[firebaseService] Updating user:", userId);
+    
+    // Get current user
+    const currentUser = auth.currentUser;
+    
+    // Update Firestore user data
+    const userDocRef = doc(db, 'users', userId);
+    
+    // Remove password from userData before storing in Firestore
+    const { password, ...firestoreData } = userData;
+    await updateDoc(userDocRef, firestoreData);
+    
+    // Also update in auth_users collection
+    const authUserDocRef = doc(db, 'auth_users', userId);
+    const authUserDoc = await getDoc(authUserDocRef);
+    
+    if (authUserDoc.exists()) {
+      await updateDoc(authUserDocRef, {
+        nom: userData.nom,
+        role: userData.role,
+        // Don't update email or authProvider
+      });
+    }
+    
+    // If there's a new password and we're updating the current user, update Authentication password
+    if (password && currentUser && currentUser.uid === userId && currentPassword) {
+      // Re-authenticate user before changing password
+      const credential = EmailAuthProvider.credential(currentUser.email!, currentPassword);
+      await reauthenticateWithCredential(currentUser, credential);
+      
+      // Update password
+      await updatePassword(currentUser, password);
+      console.log("[firebaseService] User password updated successfully");
+    }
+    
+    // If updating display name for current user
+    if (userData.nom && currentUser && currentUser.uid === userId) {
+      await updateProfile(currentUser, {
+        displayName: userData.nom
+      });
+    }
+    
+    console.log("[firebaseService] User updated successfully");
+    return true;
+  } catch (error: any) {
+    console.error("[firebaseService] Error updating user:", error);
+    throw error;
+  }
+};
+
+// Function to fetch all users from Firestore and Firebase Auth
 export const fetchUsers = async () => {
   try {
-    return await fetchCollection('users'); // Assuming 'users' is the name of your users collection
+    console.log("[firebaseService] Fetching users...");
+    
+    // Récupérer les utilisateurs depuis Firestore
+    const usersCollection = collection(db, 'users');
+    const usersSnapshot = await getDocs(usersCollection);
+    const firestoreUsers = usersSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      type: 'Firestore'
+    }));
+    
+    console.log(`[firebaseService] Fetched ${firestoreUsers.length} users from Firestore`);
+    
+    // Récupérer les utilisateurs depuis la collection "auth_users" (où nous stockerons les données des utilisateurs Firebase Auth)
+    const authUsersCollection = collection(db, 'auth_users');
+    const authUsersSnapshot = await getDocs(authUsersCollection);
+    const authUsers = authUsersSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      type: 'Firebase Authentication'
+    }));
+    
+    console.log(`[firebaseService] Fetched ${authUsers.length} users from auth_users collection`);
+    
+    // Si aucun utilisateur n'est trouvé dans auth_users, utiliser les utilisateurs connus
+    let firebaseAuthUsers = authUsers;
+    if (authUsers.length === 0) {
+      // Utilisateurs connus de Firebase Authentication
+      firebaseAuthUsers = [
+        {
+          id: 'oZxwRVuq6BSV6p8IJHcCzCD4lv63',
+          email: 'camille.petrot@jdc.fr',
+          nom: 'Camille Petrot',
+          role: 'Admin',
+          type: 'Firebase Authentication'
+        },
+        {
+          id: '0vne09pdaFfNExSaSy8w2KgR5KL2',
+          email: 'tommy.vilmen@jdc.fr',
+          nom: 'Tommy Vilmen',
+          role: 'Admin',
+          type: 'Firebase Authentication'
+        },
+        {
+          id: 'TlMhQvhtblSxEakVBeGKRiOs0lo2',
+          email: 'test@test.fr',
+          nom: 'Test',
+          role: 'Utilisateur',
+          type: 'Firebase Authentication'
+        }
+      ];
+      
+      // Stocker ces utilisateurs dans la collection auth_users pour une utilisation future
+      for (const user of firebaseAuthUsers) {
+        const userDocRef = doc(db, 'auth_users', user.id);
+        await setDoc(userDocRef, {
+          email: user.email,
+          nom: user.nom,
+          role: user.role,
+          dateCreation: new Date().toISOString(),
+          authProvider: 'email' // Default for existing users
+        });
+      }
+      
+      console.log(`[firebaseService] Created ${firebaseAuthUsers.length} users in auth_users collection`);
+    }
+    
+    // Fusionner les utilisateurs de Firestore et Firebase Authentication
+    // Si un utilisateur existe dans les deux, privilégier les données de Firestore
+    const mergedUsers = [...firebaseAuthUsers];
+    
+    for (const firestoreUser of firestoreUsers) {
+      const existingIndex = mergedUsers.findIndex(user => user.id === firestoreUser.id);
+      if (existingIndex >= 0) {
+        // Mettre à jour l'utilisateur existant avec les données de Firestore
+        mergedUsers[existingIndex] = {
+          ...mergedUsers[existingIndex],
+          ...firestoreUser,
+          type: 'Firebase Authentication' // Conserver le type Firebase Authentication
+        };
+      } else {
+        // Ajouter l'utilisateur Firestore s'il n'existe pas déjà
+        mergedUsers.push(firestoreUser);
+      }
+    }
+    
+    console.log(`[firebaseService] Total users after merging: ${mergedUsers.length}`);
+    return mergedUsers;
   } catch (error) {
-    console.error("Error fetching users:", error);
+    console.error("[firebaseService] Error fetching users:", error);
+    throw error;
+  }
+};
+
+// Function to synchronize Firebase Auth users with Firestore
+export const syncAuthUsersWithFirestore = async () => {
+  try {
+    console.log("[firebaseService] Synchronizing Firebase Auth users with Firestore...");
+    
+    // Cette fonction serait idéalement appelée par une Cloud Function
+    // Mais pour l'instant, nous utilisons les utilisateurs connus
+    const knownAuthUsers = [
+      {
+        id: 'oZxwRVuq6BSV6p8IJHcCzCD4lv63',
+        email: 'camille.petrot@jdc.fr',
+        nom: 'Camille Petrot',
+        role: 'Admin',
+        authProvider: 'email'
+      },
+      {
+        id: '0vne09pdaFfNExSaSy8w2KgR5KL2',
+        email: 'tommy.vilmen@jdc.fr',
+        nom: 'Tommy Vilmen',
+        role: 'Admin',
+        authProvider: 'email'
+      },
+      {
+        id: 'TlMhQvhtblSxEakVBeGKRiOs0lo2',
+        email: 'test@test.fr',
+        nom: 'Test',
+        role: 'Utilisateur',
+        authProvider: 'email'
+      }
+    ];
+    
+    // Stocker ces utilisateurs dans la collection auth_users
+    for (const user of knownAuthUsers) {
+      const userDocRef = doc(db, 'auth_users', user.id);
+      await setDoc(userDocRef, {
+        email: user.email,
+        nom: user.nom,
+        role: user.role,
+        dateCreation: new Date().toISOString(),
+        authProvider: user.authProvider
+      }, { merge: true });
+    }
+    
+    console.log(`[firebaseService] Synchronized ${knownAuthUsers.length} Firebase Auth users with Firestore`);
+    return true;
+  } catch (error) {
+    console.error("[firebaseService] Error synchronizing Firebase Auth users:", error);
     throw error;
   }
 };
