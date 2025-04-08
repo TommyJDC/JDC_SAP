@@ -1,75 +1,62 @@
 import React from 'react';
-import { FaShippingFast, FaTicketAlt, FaExclamationTriangle } from 'react-icons/fa'; // Import icons
+import { FaTicketAlt, FaMapMarkedAlt, FaSpinner, FaExclamationTriangle } from 'react-icons/fa';
 
 interface DashboardTilesProps {
   envoisCount: number;
   ticketsCount: number;
   loading: boolean;
   error: string | null;
+  // Add props for sector-specific stats later
+  // sectorStats?: { [sectorId: string]: { tickets: number; envois: number } };
 }
+
+const StatTile: React.FC<{ title: string; value: number | string; icon: React.ReactNode; loading?: boolean; error?: boolean }> = ({ title, value, icon, loading = false, error = false }) => (
+  <div className="dashboard-tile flex items-center space-x-4 p-4 rounded-md bg-jdc-dark-gray border border-base-300"> {/* Use JDC dark gray */}
+    <div className="p-3 rounded-full bg-jdc-black text-jdc-yellow"> {/* Icon background */}
+      {loading ? <FaSpinner className="animate-spin h-6 w-6" /> : error ? <FaExclamationTriangle className="h-6 w-6 text-red-500" /> : icon}
+    </div>
+    <div>
+      <p className="text-sm text-jdc-light-gray font-medium uppercase tracking-wider">{title}</p> {/* Lighter gray text */}
+      <p className="text-2xl font-semibold text-jdc-white"> {/* White text */}
+        {loading ? '...' : error ? 'Erreur' : value}
+      </p>
+    </div>
+  </div>
+);
+
 
 const DashboardTiles: React.FC<DashboardTilesProps> = ({ envoisCount, ticketsCount, loading, error }) => {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-      {/* Envois Tile - Apply text-primary-content to inner elements */}
-      <div className="stats shadow bg-primary text-primary-content">
-        <div className="stat">
-          <div className="stat-figure text-primary-content"> {/* Ensure icon also uses contrast color */}
-            <FaShippingFast size={32} />
-          </div>
-          <div className="stat-title text-primary-content">Envois Actifs</div> {/* Explicit text color */}
-          {loading ? (
-            <div className="stat-value text-primary-content"><span className="loading loading-dots loading-md"></span></div>
-          ) : error ? (
-             <div className="stat-value text-error"><FaExclamationTriangle/></div> // Error text is usually visible
-          ) : (
-            <div className="stat-value text-primary-content">{envoisCount}</div> /* Explicit text color */
-          )}
-          <div className="stat-desc text-primary-content opacity-75">Nombre total d'envois</div> {/* Explicit text color + slight opacity */}
-        </div>
-      </div>
-
-      {/* Tickets Tile - Apply text-secondary-content to inner elements */}
-      <div className="stats shadow bg-secondary text-secondary-content">
-        <div className="stat">
-          <div className="stat-figure text-secondary-content"> {/* Ensure icon also uses contrast color */}
-            <FaTicketAlt size={32} />
-          </div>
-          <div className="stat-title text-secondary-content">Tickets SAP Ouverts</div> {/* Explicit text color */}
-           {loading ? (
-            <div className="stat-value text-secondary-content"><span className="loading loading-dots loading-md"></span></div>
-          ) : error ? (
-             <div className="stat-value text-error"><FaExclamationTriangle/></div> // Error text is usually visible
-          ) : (
-            <div className="stat-value text-secondary-content">{ticketsCount}</div> /* Explicit text color */
-          )}
-          <div className="stat-desc text-secondary-content opacity-75">Total tickets tous secteurs</div> {/* Explicit text color + slight opacity */}
-        </div>
-      </div>
-
-      {/* Placeholder Tile 1 - Apply text-accent-content to inner elements */}
-      <div className="stats shadow bg-accent text-accent-content">
-        <div className="stat">
-          {/* <div className="stat-figure text-accent-content">
-             Icon
-          </div> */}
-          <div className="stat-title text-accent-content">Autre Statistique</div> {/* Explicit text color */}
-          <div className="stat-value text-accent-content">...</div> {/* Explicit text color */}
-          <div className="stat-desc text-accent-content opacity-75">Description</div> {/* Explicit text color + slight opacity */}
-        </div>
-      </div>
-
-      {/* Placeholder Tile 2 - Apply text-base-content (or theme default) */}
-      <div className="stats shadow"> {/* No specific bg, uses default base */}
-        <div className="stat">
-          {/* <div className="stat-figure text-info"> {/* Or text-base-content */}
-             {/* Icon */}
-          {/* </div> */}
-          <div className="stat-title text-base-content">Encore une Statistique</div> {/* Explicit text color */}
-          <div className="stat-value text-base-content">...</div> {/* Explicit text color */}
-          <div className="stat-desc text-base-content opacity-75">Description</div> {/* Explicit text color + slight opacity */}
-        </div>
-      </div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+      <StatTile
+        title="Tickets SAP Actifs"
+        value={ticketsCount}
+        icon={<FaTicketAlt className="h-6 w-6" />}
+        loading={loading}
+        error={!!error}
+      />
+      <StatTile
+        title="Envois Planifiés"
+        value={envoisCount}
+        icon={<FaMapMarkedAlt className="h-6 w-6" />}
+        loading={loading}
+        error={!!error}
+      />
+      {/* Add more tiles here */}
+       <StatTile
+        title="Stat Placeholder 1"
+        value={"N/A"} // Replace with actual data later
+        icon={<FaTicketAlt className="h-6 w-6" />} // Choose appropriate icon
+        loading={false} // Set loading state if fetching this data
+        error={false} // Set error state
+      />
+       <StatTile
+        title="Stat Placeholder 2"
+        value={"N/A"} // Replace with actual data later
+        icon={<FaMapMarkedAlt className="h-6 w-6" />} // Choose appropriate icon
+        loading={false}
+        error={false}
+      />
     </div>
   );
 };

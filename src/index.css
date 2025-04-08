@@ -2,83 +2,82 @@
 @tailwind components;
 @tailwind utilities;
 
-/* General Styles using DaisyUI theme colors */
+/* General Styles using JDC Theme */
 body {
   font-family: 'Roboto', sans-serif;
-  background-color: theme('colors.base-100'); /* Use theme color */
-  color: theme('colors.base-content'); /* Use theme color */
+  background-color: theme('colors.jdc-black'); /* #000000 */
+  color: theme('colors.jdc-white'); /* #FFFFFF */
   line-height: 1.75;
   scroll-behavior: smooth;
 }
 
 /* Apply base background to the root */
 #root {
-  background-color: theme('colors.base-100');
+  background-color: theme('colors.jdc-black');
   min-height: 100vh;
 }
 
-/* Modernized Button with 3D Effect */
+/* JDC Flat Button Style */
 .btn {
-  @apply shadow-3d transition-all duration-200 ease-in-out;
+  @apply border border-transparent transition-colors duration-200 ease-in-out rounded; /* Base button style */
+  /* Remove default DaisyUI shadows/effects if any */
 }
 
-.btn:hover {
-  @apply shadow-3d-hover transform -translate-y-0.5;
+.btn-primary {
+  @apply bg-jdc-yellow text-jdc-black border-jdc-yellow hover:bg-opacity-90 hover:border-opacity-90; /* Yellow button */
+}
+.btn-primary:active {
+   @apply bg-opacity-80;
 }
 
-.btn:active {
-  @apply shadow-inner transform translate-y-0.5;
+.btn-outline.btn-primary {
+   @apply bg-transparent text-jdc-yellow border-jdc-yellow hover:bg-jdc-yellow hover:text-jdc-black; /* Outline yellow */
+}
+.btn-outline.btn-primary:active {
+    @apply bg-opacity-20;
 }
 
-/* Card with subtle 3D effect */
+
+.btn-ghost {
+   @apply border-transparent bg-transparent text-jdc-white hover:bg-jdc-dark-gray; /* Ghost button for subtle actions */
+}
+.btn-ghost:active {
+    @apply bg-opacity-80;
+}
+
+/* Card Style */
 .card {
-  @apply bg-base-200 rounded-xl shadow-lg overflow-hidden transition-transform transform duration-300;
-  border: 1px solid theme('colors.base-300');
-}
-.card:hover {
-   @apply scale-[1.02] shadow-xl;
+  @apply bg-jdc-dark-gray rounded-md shadow-md overflow-hidden border border-base-300; /* Use dark gray, subtle shadow/border */
+  /* Remove hover scale effect */
 }
 
-/* Form Controls using DaisyUI theme */
+/* Form Controls using JDC Theme */
 .form-control {
   @apply mb-6;
 }
 
 .label {
-  @apply block text-sm font-medium text-base-content mb-2;
+  @apply block text-sm font-medium text-jdc-light-gray mb-2; /* Lighter gray for labels */
 }
 
 .input, .select, .textarea {
-  @apply input-bordered w-full bg-base-100 border-base-content/20 focus:border-primary focus:ring-primary focus:ring-opacity-50; /* Changed background color to bg-base-100 */
-}
-
-/* Ensure container padding - Adjusted in App.tsx */
-/* .container {
-  @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6;
-} */
-
-/* Navbar adjustments - Handled mostly by DaisyUI and Navbar.tsx */
-/* .navbar {
-  @apply bg-base-200 shadow-md mb-6 rounded-box;
-} */
-
-/* Active link styling */
-.navbar .active {
-  @apply text-primary font-semibold; /* Use primary color for active links */
+  @apply input-bordered w-full bg-jdc-dark-gray border-base-300 focus:border-jdc-yellow focus:ring-jdc-yellow focus:ring-opacity-50 text-jdc-white rounded; /* Dark input, yellow focus */
 }
 
 /* General Link Styling */
 a {
-  @apply text-primary hover:text-secondary transition duration-200 ease-in-out;
+  @apply text-jdc-white hover:text-jdc-yellow transition duration-200 ease-in-out;
+}
+
+/* Active link styling (e.g., in Sidebar) */
+.active-link {
+  @apply text-jdc-yellow font-semibold bg-jdc-dark-gray; /* Yellow text, dark gray background */
 }
 
 /* Icon Styles */
 .icon {
-  @apply w-5 h-5 mr-2; /* Consistent icon size */
+  @apply w-5 h-5 mr-2 inline-block align-middle; /* Consistent icon size and alignment */
 }
-
-/* Responsive adjustments for Navbar handled in Navbar.tsx */
-/* @media (max-width: 640px) { ... } */
 
 /* Fade-in Animation */
 .fade-in {
@@ -92,21 +91,43 @@ a {
 
 /* Dashboard Tiles */
 .dashboard-tile {
-  @apply card bg-base-200 p-4 md:p-6; /* Adjusted padding */
+  @apply card bg-jdc-dark-gray p-4 md:p-6; /* Use dark gray */
 }
 
 /* Responsive Table Wrapper */
 .table-responsive-wrapper {
-  @apply overflow-x-auto; /* Allows horizontal scrolling on small screens */
+  @apply overflow-x-auto;
 }
 
 /* Ensure Leaflet map containers are responsive */
 .leaflet-container {
-  @apply w-full h-full min-h-[300px] md:min-h-[400px] lg:min-h-[500px]; /* Ensure map takes space */
+  @apply w-full h-full min-h-[300px] md:min-h-[400px] lg:min-h-[500px] rounded; /* Add rounding */
 }
 
-/* Explicit styles for scrollable lists */
+/* Scrollable lists */
 .scrollable-list {
-  height: auto !important; /* Override other height settings if necessary */
-  overflow-y: scroll; /* Force scrollbar to be always visible */
+  height: auto !important;
+  overflow-y: scroll;
+}
+
+/* Sidebar specific styles */
+.sidebar {
+    @apply bg-jdc-black border-r border-base-300; /* Black background, subtle border */
+}
+.sidebar .menu a {
+    @apply text-jdc-white hover:bg-jdc-dark-gray rounded; /* White text, dark gray hover */
+}
+.sidebar .menu .active-link { /* Ensure specificity */
+    @apply bg-jdc-dark-gray text-jdc-yellow font-semibold;
+}
+
+/* Main content area padding when sidebar is visible */
+.content-area {
+    @apply transition-all duration-300 ease-in-out;
+}
+
+@screen lg {
+    .lg\:ml-64 { /* Utility class for main content offset */
+        margin-left: 16rem; /* 64 * 0.25rem = 16rem */
+    }
 }
