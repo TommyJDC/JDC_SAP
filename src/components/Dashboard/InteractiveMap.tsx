@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import useGeoCoding from '../../hooks/useGeoCoding';
@@ -51,10 +51,18 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({ tickets }) => {
   const markersRef = useRef<L.Marker[]>([]);
   const zonesLayerRef = useRef<L.GeoJSON | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
-  const { geocode } = useGeoCoding();
   const [mapReady, setMapReady] = useState(false);
-  const geocodedAddressesRef = useRef<Map<string, { lat: number, lng: number }>>(new Map());
-  const processingRef = useRef<boolean>(false);
+
+  // 1. Extract unique addresses from tickets
+  const uniqueAddresses = useMemo(() => {
+    const addresses = tickets
+      .map(ticket => ticket.adresse)
+      .filter((addr): addr is string => typeof addr === 'string' && addr.trim() !== ''); // Type guard
+    return Array.from(new Set(addresses));
+  }, [tickets]);
+
+  // 2. Use the useGeoCoding hook with the extracted addresses
+  const { coordinates: geocodedCoordinates, isLoading: isGeocoding, error: geocodingError } = useGeoCoding(uniqueAddresses);
 
   // Initialize map only once
   useEffect(() => {
@@ -69,43 +77,40 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({ tickets }) => {
     }).addTo(map);
 
     mapRef.current = map;
-    
+
     // Add the GeoJSON zones with proper colors
     try {
       const zonesLayer = L.geoJSON([], {
         style: (feature) => {
-          if (feature.properties && feature.properties.name) {
-            const zoneName = feature.properties.name;
-            return zoneColorMap[zoneName] || defaultZoneStyle;
+          if (feature?.properties?.name) {
+            return zoneColorMap[feature.properties.name] || defaultZoneStyle;
           }
           return defaultZoneStyle;
         },
         onEachFeature: (feature, layer) => {
-          if (feature.properties && feature.properties.name) {
+          if (feature?.properties?.name) {
             layer.bindPopup(`<b>Secteur:</b> ${feature.properties.name}`);
           }
         }
       });
-      
-      // Add each zone from our kmlZones utility
+
       kmlZones.forEach(zone => {
         zonesLayer.addData(zone.feature);
       });
-      
+
       zonesLayer.addTo(map);
       zonesLayerRef.current = zonesLayer;
-      
-      // Fit map to zones bounds
+
       if (zonesLayer.getBounds().isValid()) {
         map.fitBounds(zonesLayer.getBounds());
       }
-      
-      console.log("[InteractiveMap] Added GeoJSON zones to map with proper colors");
+
+      console.log("[InteractiveMap] Added GeoJSON zones to map.");
     } catch (error) {
       console.error("[InteractiveMap] Error adding GeoJSON zones:", error);
       setMapError("Erreur lors du chargement des zones");
     }
-    
+
     setMapReady(true);
     console.log("[InteractiveMap] Map initialized");
 
@@ -116,89 +121,92 @@ const InteractiveMap: React.FC<InteractiveMapProps> = ({ tickets }) => {
         mapRef.current = null;
       }
     };
-  }, []);
+  }, []); // Empty dependency array ensures this runs only once
 
-  // Process tickets and add markers
+  // Process tickets and add markers when map is ready, tickets change, or geocoding results change
   useEffect(() => {
-    if (!mapReady || !mapRef.current) return;
-    
-    const addMarkersToMap = async () => {
-      if (processingRef.current) return;
-      processingRef.current = true;
-      
-      console.log(`[InteractiveMap] Processing ${tickets.length} tickets for markers`);
-      
-      // Clear existing markers first
-      markersRef.current.forEach(marker => {
-        if (mapRef.current) marker.remove();
-      });
-      markersRef.current = [];
-      
-      // Process each ticket
-      for (const ticket of tickets) {
-        if (!ticket.adresse) continue;
-        
-        try {
-          // Check if we already geocoded this address
-          let coordinates;
-          if (geocodedAddressesRef.current.has(ticket.adresse)) {
-            coordinates = geocodedAddressesRef.current.get(ticket.adresse);
-            console.log(`[InteractiveMap] Using cached coordinates for: ${ticket.adresse}`, coordinates);
-          } else {
-            // Geocode the address
-            const result = await geocode(ticket.adresse);
-            if (result) {
-              coordinates = { lat: result.latitude, lng: result.longitude };
-              geocodedAddressesRef.current.set(ticket.adresse, coordinates);
-              console.log(`[InteractiveMap] Geocoded address: ${ticket.adresse}`, coordinates);
-            }
+    if (!mapReady || !mapRef.current || isGeocoding) return; // Wait for map and geocoding
+
+    console.log(`[InteractiveMap] Updating markers. Geocoding loading: ${isGeocoding}`);
+
+    // Clear existing markers first
+    markersRef.current.forEach(marker => {
+      if (mapRef.current) marker.remove();
+    });
+    markersRef.current = [];
+
+    // Process each ticket using the geocoded coordinates
+    for (const ticket of tickets) {
+      if (!ticket.adresse) continue;
+
+      try {
+        // 3. Get coordinates from the hook's result map
+        const coordinates = geocodedCoordinates.get(ticket.adresse);
+
+        // Add marker if we have coordinates
+        if (coordinates && mapRef.current) {
+          let markerColor = '#3388ff'; // Default blue
+
+          // Change color based on ticket status
+          if (ticket.statut) {
+            const statusLower = ticket.statut.toLowerCase();
+            if (statusLower.includes('en cours')) markerColor = '#FFA500'; // Orange
+            else if (statusLower.includes('terminé')) markerColor = '#4CAF50'; // Green
+            else if (statusLower.includes('annulé')) markerColor = '#F44336'; // Red
+            else if (statusLower.includes('demande de rma')) markerColor = '#9C27B0'; // Purple for RMA
+            else if (statusLower.includes('nouveau')) markerColor = '#2196F3'; // Blue for New
           }
-          
-          // Add marker if we have coordinates
-          if (coordinates && mapRef.current) {
-            // Use circular marker icon based on ticket status
-            let markerColor = '#3388ff'; // Default blue
-            
-            // Change color based on ticket status if needed
-            if (ticket.statut) {
-              if (ticket.statut.toLowerCase().includes('en cours')) {
-                markerColor = '#FFA500'; // Orange for in progress
-              } else if (ticket.statut.toLowerCase().includes('terminé')) {
-                markerColor = '#4CAF50'; // Green for completed
-              } else if (ticket.statut.toLowerCase().includes('annulé')) {
-                markerColor = '#F44336'; // Red for cancelled
-              }
-            }
-            
-            const circleIcon = createCircleMarker(markerColor);
-            
-            const marker = L.marker([coordinates.lat, coordinates.lng], { icon: circleIcon })
-              .bindPopup(`<b>${ticket.raisonSociale || 'Sans nom'}</b><br/>${ticket.adresse}<br/>Statut: ${ticket.statut || 'Non défini'}`);
-            
-            marker.addTo(mapRef.current);
-            markersRef.current.push(marker);
-            console.log(`[InteractiveMap] Added circular marker for: ${ticket.adresse}`);
-          }
-        } catch (error) {
-          console.error(`[InteractiveMap] Error processing ticket: ${ticket.id}`, error);
+
+          const circleIcon = createCircleMarker(markerColor);
+
+          const marker = L.marker([coordinates.lat, coordinates.lng], { icon: circleIcon })
+            .bindPopup(`<b>${ticket.raisonSociale || 'Sans nom'}</b><br/>${ticket.adresse}<br/>Statut: ${ticket.statut || 'Non défini'}`);
+
+          marker.addTo(mapRef.current);
+          markersRef.current.push(marker);
+          // console.log(`[InteractiveMap] Added marker for: ${ticket.adresse}`); // Less verbose logging
+        } else if (!coordinates && geocodedCoordinates.has(ticket.adresse)) {
+          // Address was processed by geocoder but resulted in null (not found)
+          console.warn(`[InteractiveMap] No coordinates found for address: ${ticket.adresse}`);
         }
+        // If geocodedCoordinates doesn't have the address key, it might still be loading or failed silently in the hook
+      } catch (error) {
+        // This catch block might be less likely to trigger now, but kept for safety
+        console.error(`[InteractiveMap] Error creating marker for ticket: ${ticket.id}`, error);
       }
-      
-      processingRef.current = false;
-      console.log(`[InteractiveMap] Added ${markersRef.current.length} circular markers to map`);
-    };
-    
-    addMarkersToMap();
-  }, [tickets, mapReady, geocode]);
+    }
+
+    console.log(`[InteractiveMap] Added ${markersRef.current.length} markers to map.`);
+
+  }, [tickets, mapReady, geocodedCoordinates, isGeocoding]); // Depend on tickets, map readiness, and geocoding results/status
+
+  // Handle geocoding errors
+  useEffect(() => {
+    if (geocodingError) {
+      setMapError(`Erreur de géocodage: ${geocodingError}`);
+    } else {
+      // Clear geocoding-specific errors if it resolves
+      // Keep other potential map errors (like zone loading)
+      if (mapError?.startsWith('Erreur de géocodage')) {
+         setMapError(null);
+      }
+    }
+  }, [geocodingError]);
+
 
   return (
     <div className="relative">
-      <div 
+      {isGeocoding && (
+         <div className="absolute top-2 left-2 z-[1000] bg-yellow-100 text-yellow-800 px-3 py-1 rounded text-sm">
+           Géocodage en cours...
+         </div>
+       )}
+      <div
         ref={mapContainerRef}
         className="w-full h-[500px] rounded-lg"
       ></div>
       {mapError && (
-        <div className="absolute top-2 right-2 bg-red-100 text-red-700 px-4 py-2 rounded">
+        <div className="absolute top-2 right-2 z-[1000] bg-red-100 text-red-700 px-4 py-2 rounded text-sm">
           {mapError}
         </div>
       )}

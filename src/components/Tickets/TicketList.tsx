@@ -1,132 +1,176 @@
-import React from 'react';
-import { FaChevronDown, FaChevronRight, FaUserTie } from 'react-icons/fa'; // Added FaUserTie
+import React, { useState, useEffect, useCallback } from 'react';
+    import { FaChevronDown, FaChevronUp, FaUserTie, FaInfoCircle, FaMapMarkerAlt, FaSpinner, FaCalendarAlt, FaPhone } from 'react-icons/fa';
+    import { parseFrenchDate, formatDateForDisplay } from '../../utils/dateUtils';
 
-interface Ticket {
-  id: string;
-  raisonSociale?: string;
-  codeClient?: string;
-  numeroSAP?: string;
-  statut?: string;
-  salesperson?: string; // Expect salesperson field
-  [key: string]: any; // Allow other fields
-}
-
-interface GroupedTickets {
-  [key: string]: Ticket[];
-}
-
-interface TicketListProps {
-  groupedTickets: GroupedTickets;
-  onSelectTicket: (ticket: Ticket) => void;
-  selectedTicketId?: string | null;
-  groupByField: 'raisonSociale'; // Currently only supports grouping by raisonSociale
-}
-
-const TicketList: React.FC<TicketListProps> = ({
-  groupedTickets,
-  onSelectTicket,
-  selectedTicketId,
-  groupByField, // Keep prop for potential future flexibility
-}) => {
-  const [openGroups, setOpenGroups] = React.useState<Record<string, boolean>>({});
-
-  // Effect to potentially open the group of the selected ticket
-  React.useEffect(() => {
-    if (selectedTicketId) {
-      const groupKey = Object.keys(groupedTickets).find(key =>
-        groupedTickets[key].some(ticket => ticket.id === selectedTicketId)
-      );
-      if (groupKey && !openGroups[groupKey]) {
-        setOpenGroups(prev => ({ ...prev, [groupKey]: true }));
-      }
+    interface TicketListProps {
+      groupedTickets: GroupedTickets;
+      onSelectTicket: (ticket: Ticket) => void;
+      selectedTicketId: string | null;
+      groupByField: string;
+      isLoadingGeo: boolean;
     }
-    // Intentionally not depending on groupedTickets or openGroups to avoid loops
-    // This effect only runs when the selectedTicketId changes from the outside
-  }, [selectedTicketId]);
+
+    const TicketList: React.FC<TicketListProps> = ({ groupedTickets, onSelectTicket, selectedTicketId, groupByField, isLoadingGeo }) => {
+      const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+      const [filteredGroups, setFilteredGroups] = useState<GroupedTickets>({});
+      const [searchTerm, setSearchTerm] = useState('');
+      const [showNumberOptions, setShowNumberOptions] = useState<Record<string, boolean>>({}); // Track dropdown visibility per ticket
+      const [selectedNumber, setSelectedNumber] = useState<Record<string, string | null>>({}); // Track selected number per ticket
 
 
-  const toggleGroup = (groupKey: string) => {
-    setOpenGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
-  };
+      useEffect(() => {
+        console.log("[TicketList] useEffect - searchTerm:", searchTerm, "groupedTickets:", groupedTickets); // DEBUG LOG
+        if (!searchTerm) {
+          setFilteredGroups(groupedTickets);
+          console.log("[TicketList] No search term, filteredGroups set to groupedTickets:", groupedTickets); // DEBUG LOG
+          return;
+        }
 
-  const groupKeys = Object.keys(groupedTickets).sort(); // Sort groups alphabetically
+        const lowerSearchTerm = searchTerm.toLowerCase();
+        const newFilteredGroups: GroupedTickets = {};
 
-  if (groupKeys.length === 0) {
-    return <p className="text-center text-gray-500">Aucun ticket à afficher.</p>;
-  }
+        Object.entries(groupedTickets).forEach(([groupKey, tickets]) => {
+          const filteredTickets = tickets.filter(ticket => {
+            const ticketDate = ticket.date ? formatDateForDisplay(parseFrenchDate(ticket.date)).toLowerCase() : '';
+            return (
+              (ticket.raisonSociale?.toLowerCase() || '').includes(lowerSearchTerm) ||
+              (ticket.codeClient?.toLowerCase() || '').includes(lowerSearchTerm) ||
+              (ticket.numeroSAP?.toLowerCase() || '').includes(lowerSearchTerm) ||
+              (ticket.adresse?.toLowerCase() || '').includes(lowerSearchTerm) ||
+              (ticket.deducedSalesperson?.toLowerCase() || '').includes(lowerSearchTerm) ||
+              (ticket.telephone?.toLowerCase() || '').includes(lowerSearchTerm) ||
+              (ticket.statut?.toLowerCase() || '').includes(lowerSearchTerm) ||
+              ticketDate.includes(lowerSearchTerm)
+            );
+          });
 
-  return (
-    <div className="space-y-2">
-      {groupKeys.map((groupKey) => {
-        const ticketsInGroup = groupedTickets[groupKey];
-        const isGroupOpen = openGroups[groupKey] ?? false; // Default to closed
+          if (filteredTickets.length > 0) {
+            newFilteredGroups[groupKey] = filteredTickets;
+          }
+        });
 
-        return (
-          <div key={groupKey} className="collapse collapse-arrow border border-base-300 bg-base-100 rounded-md">
-             <input
-                type="checkbox"
-                checked={isGroupOpen}
-                onChange={() => toggleGroup(groupKey)}
-                className="min-h-0 p-0" // DaisyUI checkbox hack for collapse control
-                aria-label={`Toggle group ${groupKey}`}
-             />
-            <div
-              className="collapse-title text-md font-medium cursor-pointer flex justify-between items-center p-2 min-h-0"
-              onClick={() => toggleGroup(groupKey)} // Also allow clicking title
-            >
-              <span>{groupKey} ({ticketsInGroup.length})</span>
-              {/* Icon managed by collapse-arrow */}
-            </div>
-            <div className={`collapse-content p-0 ${isGroupOpen ? 'expanded' : ''}`}>
-              <ul className="menu menu-sm bg-base-100 p-0 [&_li>*]:rounded-none">
-                {ticketsInGroup.map((ticket) => (
-                  <li key={ticket.id}>
-                    <a
-                      href="#"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        onSelectTicket(ticket);
-                      }}
-                      className={`flex justify-between items-center p-2 ${ticket.id === selectedTicketId ? 'active' : ''}`}
+        setFilteredGroups(newFilteredGroups);
+        console.log("[TicketList] Search term:", searchTerm, "filteredGroups:", newFilteredGroups); // DEBUG LOG
+      }, [searchTerm, groupedTickets]);
+
+      const handleWebexCall = useCallback((ticketId: string, phoneNumbers: string[]) => {
+        if (phoneNumbers.length === 1) {
+          window.location.href = `webexphone://call?uri=tel:${phoneNumbers[0]}`;
+        } else if (phoneNumbers.length > 1) {
+          setShowNumberOptions(prevState => ({ ...prevState, [ticketId]: true })); // Show options for this ticket
+        }
+      }, []);
+
+      const handleNumberSelection = useCallback((ticketId: string, number: string) => {
+        setSelectedNumber(prevState => ({ ...prevState, [ticketId]: number }));
+        setShowNumberOptions(prevState => ({ ...prevState, [ticketId]: false })); // Hide options after selection
+        window.location.href = `webexphone://call?uri=tel:${number}`; // Call selected number
+      }, []);
+
+
+      // ... reste du composant
+      console.log("[TicketList] groupedTickets prop:", groupedTickets); // DEBUG LOG
+      console.log("[TicketList] filteredGroups state:", filteredGroups); // DEBUG LOG
+
+      return (
+        <div>
+          <input
+            type="text"
+            placeholder="Rechercher..."
+            className="input input-bordered w-full max-w-xs mb-4"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          {Object.entries(filteredGroups).map(([groupKey, tickets]) => (
+            <div key={groupKey} className="mb-6 border rounded p-4 bg-jdc-gray-lighter">
+              <div className="flex justify-between items-center cursor-pointer" onClick={() => setExpandedGroups(prevState => ({ ...prevState, [groupKey]: !prevState[groupKey] }))}>
+                <h2 className="text-lg font-semibold text-jdc-white">{groupKey} ({tickets.length})</h2>
+                <button onClick={(e) => {
+                  e.stopPropagation(); // Prevent group collapse when toggling all
+                  // Implement toggle all logic here if needed
+                }} className="text-jdc-yellow hover:text-jdc-gold focus:outline-none">
+                  {/* Toggle All Button - Implement if needed */}
+                </button>
+                <span className="text-jdc-yellow">
+                  {expandedGroups[groupKey] ? <FaChevronUp /> : <FaChevronDown />}
+                </span>
+              </div>
+              <div className={`overflow-hidden transition-height duration-300 ${expandedGroups[groupKey] ? 'max-h-96 p-2' : 'max-h-0'}`}>
+                {tickets.map(ticket => {
+                  const phoneNumbersArray = ticket.telephone?.split(',').map((num: string) => num.trim()) || [];
+                  return (
+                    <div
+                      key={ticket.id}
+                      className={`py-2 px-3 my-1 rounded cursor-pointer hover:bg-jdc-gray ${selectedTicketId === ticket.id ? 'bg-jdc-gray' : ''}`}
+                      onClick={() => onSelectTicket(ticket)}
                     >
-                      <div className="flex-1 overflow-hidden mr-2">
-                        <span className="block truncate text-xs font-semibold">
-                          {ticket.numeroSAP || ticket.codeClient || `ID: ${ticket.id.substring(0, 6)}...`}
-                        </span>
-                        <span className="block truncate text-xs text-gray-500">
-                          Statut: {ticket.statut || 'N/A'}
-                        </span>
-                         {/* Display Salesperson */}
-                         {ticket.salesperson && (
-                            <span className="block truncate text-xs text-info mt-1 flex items-center">
-                                <FaUserTie className="mr-1 flex-shrink-0" />
-                                {ticket.salesperson}
-                            </span>
-                         )}
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center">
+                          <FaInfoCircle className="mr-2 text-jdc-lightblue" />
+                          <span className="text-jdc-white">{ticket.numeroSAP || 'N/A'}</span>
+                        </div>
+                        <div className="text-right">
+                          <div className="flex items-center justify-end">
+                            <FaCalendarAlt className="mr-1 text-jdc-light-gray" />
+                            <span className="text-sm text-jdc-light-gray">{ticket.date ? formatDateForDisplay(parseFrenchDate(ticket.date)) : 'Date N/A'}</span>
+                          </div>
+                          {ticket.telephone && (
+                            <div className="flex items-center justify-end relative">
+                              <button
+                                className="btn btn-ghost btn-xs"
+                                onClick={(e) => {
+                                  e.stopPropagation(); // Prevent card click
+                                  handleWebexCall(ticket.id, phoneNumbersArray);
+                                }}
+                              >
+                                <FaPhone className="mr-1 text-jdc-light-gray" />
+                                <span className="text-sm text-jdc-yellow hover:text-jdc-gold">Appeler</span>
+                              </button>
+                              {showNumberOptions[ticket.id] && phoneNumbersArray.length > 1 && (
+                                <ul className="menu bg-jdc-gray rounded mt-2 w-56 absolute right-0 top-6 z-10">
+                                  {phoneNumbersArray.map((number, index) => (
+                                    <li key={index} onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleNumberSelection(ticket.id, number);
+                                    }}>
+                                      <a>{number}</a>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                              <a
+                                href={`webexphone://call?uri=tel:${phoneNumbersArray[0]}`}
+                                className="text-sm text-jdc-yellow hover:text-jdc-gold hidden" // Hidden single number link
+                              >
+                                {ticket.telephone}
+                              </a>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      {/* Optional: Add a small indicator like status color */}
-                      {/* <span className={`h-2 w-2 rounded-full ${getStatusColor(ticket.statut)}`}></span> */}
-                    </a>
-                  </li>
-                ))}
-              </ul>
+                      <div className="flex items-center mt-1">
+                        <FaUserTie className="mr-2 text-jdc-light-gray" />
+                        <span className="text-sm text-jdc-light-gray">{ticket.deducedSalesperson}</span>
+                      </div>
+                      <div className="flex items-center mt-1">
+                        <FaMapMarkerAlt className="mr-2 text-jdc-light-gray" />
+                        <span className="text-sm text-jdc-light-gray truncate">{ticket.adresse}</span>
+                        {isLoadingGeo && <FaSpinner className="ml-1 text-jdc-yellow animate-spin" />}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
+          ))}
+          {Object.keys(filteredGroups).length === 0 && !isLoadingGeo && searchTerm !== "" && (
+            <p className="text-center text-jdc-white py-4">Aucun ticket trouvé pour la recherche "{searchTerm}".</p>
+          )}
+           {Object.keys(filteredGroups).length === 0 && !isLoadingGeo && searchTerm === "" && Object.keys(groupedTickets).length > 0 && (
+            <p className="text-center text-jdc-white py-4">Aucun ticket trouvé.</p>
+          )}
+        </div>
+      );
+    };
 
-// Helper function for status color (example)
-// const getStatusColor = (status?: string): string => {
-//   switch (status?.toLowerCase()) {
-//     case 'en cours': return 'bg-blue-500';
-//     case 'terminé': return 'bg-green-500';
-//     case 'annulé': return 'bg-red-500';
-//     case 'demande de rma': return 'bg-orange-500';
-//     default: return 'bg-gray-400';
-//   }
-// };
-
-export default TicketList;
+    export default TicketList;
