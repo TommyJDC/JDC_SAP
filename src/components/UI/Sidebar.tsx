@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink, Link } from 'react-router-dom';
 import { getAuth, signOut } from 'firebase/auth';
-import { FaHome, FaListAlt, FaCog, FaPlus, FaSignOutAlt, FaMapMarkedAlt, FaTicketAlt, FaUsers, FaChartBar } from 'react-icons/fa'; // Added more relevant icons
+import { FaHome, FaListAlt, FaCog, FaPlus, FaSignOutAlt, FaMapMarkedAlt, FaTicketAlt, FaUsers, FaChartBar, FaSearch } from 'react-icons/fa'; // Added FaSearch
 
 interface SidebarProps {
   sidebarOpen: boolean;
@@ -59,6 +59,15 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, toggleSidebar }) => {
           onClick={window.innerWidth < 1024 ? toggleSidebar : undefined}
         >
           <FaMapMarkedAlt className="icon" /> Envois
+        </NavLink>
+      </li>
+       <li>
+        <NavLink
+          to="/article-search"
+          className={({ isActive }) => `${commonLinkClasses} ${isActive ? activeLinkClasses : ''}`}
+          onClick={window.innerWidth < 1024 ? toggleSidebar : undefined}
+        >
+          <FaSearch className="icon" /> Recherche Article
         </NavLink>
       </li>
       <li>

@@ -6,6 +6,7 @@ import SAPPage from './pages/SAP/SAPPage';
 import EnvoisPage from './pages/Envois/EnvoisPage';
 import AdminPage from './pages/Admin/AdminPage';
 import AuthPage from './pages/Auth/AuthPage';
+import ArticleSearchPage from './pages/ArticleSearch/ArticleSearchPage'; // Import Article Search Page
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import CreateTicketPage from './pages/SAP/CreateTicketPage';
 import { FaBars } from 'react-icons/fa'; // Icon for menu toggle
@@ -76,6 +77,7 @@ function App() {
                 <Route path="/sap/create" element={<CreateTicketPage />} />
                 <Route path="/envois" element={<EnvoisPage />} />
                 <Route path="/admin" element={<AdminPage />} />
+                <Route path="/article-search" element={<ArticleSearchPage />} /> {/* Add Article Search Route */}
                 {/* Redirect authenticated users away from /auth */}
                 <Route path="/auth" element={<DashboardPage />} />
               </Routes>

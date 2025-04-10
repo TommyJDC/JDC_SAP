@@ -1,5 +1,5 @@
 import { db, auth, app } from '../config/firebase'; // Ensure 'app' is imported if needed for functions
-import { collection, getDocs, doc, getDoc, addDoc, updateDoc, deleteDoc, query, where, getCountFromServer, onSnapshot, Unsubscribe, setDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, addDoc, updateDoc, deleteDoc, query, where, getCountFromServer, onSnapshot, Unsubscribe, setDoc, collectionGroup, limit, orderBy, startAt, endAt } from 'firebase/firestore'; // Added orderBy, startAt, endAt
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -16,6 +16,7 @@ import {
   signInWithRedirect
 } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { Article } from '../types'; // Import the Article type
 
 // Define the required secret
 const FIRESTORE_SECRET = "E92N49W43Y29";
@@ -254,7 +255,7 @@ export const listenToTicketsBySector = (
     querySnapshot.docs.forEach((docSnap) => {
       const ticketData = docSnap.data();
       // --- DEBUG LOG ---
-      console.log(`[firebaseService DEBUG ${sectorId}] Received ticket ${docSnap.id}: Raw date field =`, ticketData.date, `(Type: ${typeof ticketData.date})`);
+      // console.log(`[firebaseService DEBUG ${sectorId}] Received ticket ${docSnap.id}: Raw date field =`, ticketData.date, `(Type: ${typeof ticketData.date})`);
       // --- END DEBUG LOG ---
 
       let currentStatus = ticketData.statut;
@@ -911,6 +912,109 @@ export const syncAuthUsersWithFirestore = async () => {
     throw error; // Re-throw the error
   }
 };
+
+// --- Article Search Functions ---
+
+/**
+ * Searches for articles based on a search term.
+ * Checks 'Code' for an exact match (case-sensitive).
+ * Checks 'Désignation' for a prefix match (case-insensitive by converting input to uppercase).
+ * Assumes a FLAT 'articles' collection exists where each document
+ * has 'Code' and 'Désignation' (stored in uppercase) fields.
+ *
+ * @param searchTerm The term to search for (can be exact code or partial designation).
+ * @returns A promise resolving to an array of Article objects.
+ */
+export const searchArticles = async (searchTerm: string): Promise<Article[]> => {
+  console.log(`[firebaseService] Searching articles with term: "${searchTerm}"`);
+
+  // Check if the search term is empty
+  if (!searchTerm || searchTerm.trim().length === 0) {
+    console.log("[firebaseService] Search term is empty, returning empty results.");
+    return [];
+  }
+
+  const trimmedSearchTerm = searchTerm.trim();
+  const searchTermUppercase = trimmedSearchTerm.toUpperCase(); // Convert input to uppercase for designation search
+  const articlesCollection = collection(db, 'articles'); // Assumes FLAT 'articles' collection
+  const resultsMap = new Map<string, Article>(); // Use a Map to automatically handle duplicates by ID
+
+  try {
+    // --- Query 1: Exact Match on Code (Case-Sensitive) ---
+    const codeQuery = query(articlesCollection, where("Code", "==", trimmedSearchTerm));
+    console.log(`[firebaseService] Executing Code exact match query...`);
+    const codeSnapshot = await getDocs(codeQuery);
+    console.log(`[firebaseService] Code query found ${codeSnapshot.docs.length} matches.`);
+    codeSnapshot.docs.forEach(docSnap => {
+      const data = docSnap.data();
+      if (data.Code && data.Désignation) { // Basic validation
+        const article: Article = {
+          id: docSnap.id,
+          collectionSource: data.category as Article['collectionSource'] || 'unknown',
+          Code: data.Code,
+          Désignation: data.Désignation,
+          // No designation_lowercase needed here
+          ...data
+        } as Article;
+        resultsMap.set(docSnap.id, article); // Add/overwrite in map
+      } else {
+         console.warn(`[firebaseService] Document ${docSnap.id} matched by Code is missing 'Code' or 'Désignation'.`);
+      }
+    });
+
+    // --- Query 2: Prefix Match on Désignation (Case-Insensitive via Uppercase) ---
+    // Requires Firestore index on 'Désignation' (ascending)
+    const endTerm = searchTermUppercase + '\uf8ff'; // \uf8ff is a very high code point
+    const designationQuery = query(
+      articlesCollection,
+      orderBy("Désignation"), // MUST order by the field being queried ('Désignation')
+      startAt(searchTermUppercase),
+      endAt(endTerm)
+      // limit(20) // Optional: Limit results for performance
+    );
+
+    console.log(`[firebaseService] Executing Désignation prefix query (using uppercase)...`);
+    const designationSnapshot = await getDocs(designationQuery);
+    console.log(`[firebaseService] Désignation query found ${designationSnapshot.docs.length} potential matches.`);
+
+    designationSnapshot.docs.forEach(docSnap => {
+      const data = docSnap.data();
+      // Basic validation
+      if (data.Code && data.Désignation) {
+        const article: Article = {
+          id: docSnap.id,
+          collectionSource: data.category as Article['collectionSource'] || 'unknown',
+          Code: data.Code,
+          Désignation: data.Désignation,
+          // No designation_lowercase needed here
+          ...data
+        } as Article;
+        // Add to map only if it wasn't already found by the Code query
+        if (!resultsMap.has(docSnap.id)) {
+            resultsMap.set(docSnap.id, article);
+        }
+      } else {
+        console.warn(`[firebaseService] Document ${docSnap.id} matched by Désignation is missing 'Code' or 'Désignation'.`);
+      }
+    });
+
+    // --- Combine Results ---
+    const combinedResults = Array.from(resultsMap.values());
+
+    console.log(`[firebaseService] Article search completed. Found ${combinedResults.length} unique articles.`);
+    return combinedResults;
+
+  } catch (error: any) {
+    console.error("[firebaseService] Error executing article search:", error);
+    // Check for specific Firestore errors, e.g., missing index
+    if (error.code === 'failed-precondition') {
+        console.error("[firebaseService] Firestore Error: Likely missing a composite index. Check the Firestore console error message for a link to create it. You'll likely need an index on 'Désignation' (ascending).");
+        throw new Error("Erreur Firestore: Index manquant requis pour la recherche (probablement sur 'Désignation'). Vérifiez la console Firebase.");
+    }
+    throw new Error("Échec de la recherche d'articles."); // Throw a generic error
+  }
+};
+
 
 // --- Cloud Function Calls (Example) ---
 
