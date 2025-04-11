@@ -647,25 +647,45 @@ export const createUser = async (userData: { email: string; password: string; no
     user = userCredential.user; // Assign user here
     console.log("[firebaseService] User created in Auth:", user.uid);
 
+    // --- DEBUG --- Log before updateProfile
+    console.log(`[firebaseService DEBUG] Attempting to update profile for user ${user.uid} with name: ${userData.nom}`);
     // 2. Update Auth profile (optional but good practice)
     await updateProfile(user, {
       displayName: userData.nom
     });
-    console.log("[firebaseService] Auth profile updated for:", user.uid);
+    // --- DEBUG --- Log after updateProfile
+    console.log(`[firebaseService DEBUG] Successfully updated profile for user ${user.uid}`);
 
-    // 3. Prepare Firestore data for 'users' collection
-    const firestoreUserData = {
-      uid: user.uid,
-      email: userData.email,
-      nom: userData.nom,
-      role: userData.role,
-      secteurs: userData.secteurs,
-      dateCreation: new Date().toISOString()
-    };
-    // Add secret before writing to 'users'
-    const userDocRef = doc(db, 'users', user.uid);
-    await setDoc(userDocRef, addSecret(firestoreUserData));
-    console.log("[firebaseService] User data stored in 'users' collection (secret included):", user.uid);
+    // --- DEBUG --- Log before starting Firestore writes
+    console.log(`[firebaseService DEBUG] Proceeding to Firestore writes for user ${user.uid}`);
+
+    // --- START: Write to 'users' collection ---
+    try {
+      console.log(`[firebaseService] Preparing to write to 'users' for user: ${user.uid}`);
+      const usersCollectionData = {
+        uid: user.uid, // Store the UID explicitly
+        email: userData.email,
+        nom: userData.nom,
+        role: userData.role || 'Utilisateur', // Default role if not provided
+        secteurs: userData.secteurs || [], // Default to empty array
+        dateCreation: new Date().toISOString()
+      };
+      const userDocRef = doc(db, 'users', user.uid); // Use UID as document ID
+      // Add secret before writing to 'users'
+      await setDoc(userDocRef, addSecret(usersCollectionData));
+      console.log("[firebaseService] User data successfully stored in 'users' collection (secret included):", user.uid);
+    } catch (usersError) {
+      console.error(`[firebaseService] CRITICAL ERROR writing to 'users' for user ${user?.uid}:`, usersError);
+      // Log the detailed error object
+      console.error("[firebaseService] Detailed 'users' write error:", JSON.stringify(usersError, null, 2));
+      // Decide on error handling:
+      // - Option 1: Log and continue (user exists in Auth, but not 'users')
+      // - Option 2: Throw the error to indicate partial failure
+      // - Option 3: Attempt to delete the Auth user for consistency (complex)
+      // For now, let's log and throw to make the failure explicit in the calling function (AuthPage)
+      throw new Error(`Failed to write user data to users collection: ${usersError}`);
+    }
+    // --- END: Write to 'users' collection ---
 
     // --- START: Write to 'auth_users' with specific logging ---
     try {
@@ -673,22 +693,24 @@ export const createUser = async (userData: { email: string; password: string; no
       const authUsersData = {
         email: userData.email,
         nom: userData.nom,
-        role: userData.role,
+        role: userData.role || 'Utilisateur', // Keep role consistent
         dateCreation: new Date().toISOString(),
         authProvider: 'email' // Assuming email/password provider
       };
-      const authUserDocRef = doc(db, 'auth_users', user.uid);
+      const authUserDocRef = doc(db, 'auth_users', user.uid); // Use UID as document ID
       // Add secret before writing to 'auth_users'
-      await setDoc(authUserDocRef, addSecret(authUsersData));
-      console.log("[firebaseService] User data successfully stored in 'auth_users' collection (secret included):", user.uid);
+      // Using setDoc with merge: true might be safer if other processes could write here
+      await setDoc(authUserDocRef, addSecret(authUsersData), { merge: true });
+      console.log("[firebaseService] User data successfully stored/merged in 'auth_users' collection (secret included):", user.uid);
     } catch (authUsersError) {
-      console.error(`[firebaseService] CRITICAL ERROR writing to 'auth_users' for user ${user?.uid}:`, authUsersError);
-      // Decide on error handling:
-      // - Option 1: Log and continue (user exists in Auth and 'users', but not 'auth_users')
-      // - Option 2: Throw the error to indicate partial failure
-      // - Option 3: Attempt to delete the Auth user and 'users' doc for consistency (complex)
-      // For now, let's log and throw to make the failure explicit in the calling function (AuthPage)
-      throw new Error(`Failed to write user data to auth_users collection: ${authUsersError}`);
+      console.error(`[firebaseService] ERROR writing to 'auth_users' for user ${user?.uid}:`, authUsersError);
+      // Log the detailed error object
+      console.error("[firebaseService] Detailed 'auth_users' write error:", JSON.stringify(authUsersError, null, 2));
+      // Log and potentially throw, but the 'users' doc might already exist
+      // Consider if this failure is critical enough to roll back the 'users' write or delete the Auth user
+      // For now, log the error but allow the function to potentially succeed if 'users' write was okay.
+      // throw new Error(`Failed to write user data to auth_users collection: ${authUsersError}`);
+       console.warn(`[firebaseService] User ${user.uid} created in Auth and 'users', but failed during Firestore write to 'auth_users'.`);
     }
     // --- END: Write to 'auth_users' ---
 
@@ -701,14 +723,19 @@ export const createUser = async (userData: { email: string; password: string; no
     if (error.code) {
       console.error("[firebaseService] Firebase error code:", error.code);
     }
+    // Log the detailed error object in the main catch block as well
+    console.error("[firebaseService] Detailed error in main catch:", JSON.stringify(error, null, 2));
+
     // If the error occurred *after* Auth user creation but during Firestore writes,
     // the Auth user might exist without corresponding Firestore docs.
     // Consider adding cleanup logic here if necessary (e.g., delete the Auth user if Firestore fails)
     // but this can be complex.
-    if (user && error.message.includes('auth_users')) {
-        console.error(`[firebaseService] User ${user.uid} created in Auth, but failed during Firestore write ('auth_users'). Manual cleanup might be needed.`);
-    } else if (user && error.message.includes('users')) {
-         console.error(`[firebaseService] User ${user.uid} created in Auth, but failed during Firestore write ('users'). Manual cleanup might be needed.`);
+    if (user && error.message.includes('users collection')) { // Check specific error message
+        console.error(`[firebaseService] User ${user.uid} created in Auth, but failed during Firestore write ('users'). Manual cleanup might be needed.`);
+        // Consider deleting the Auth user here if the 'users' doc is critical
+        // await deleteUser(user).catch(delErr => console.error("Failed to clean up Auth user after Firestore error:", delErr));
+    } else if (user && error.message.includes('auth_users collection')) {
+         console.error(`[firebaseService] User ${user.uid} created in Auth and 'users', but failed during Firestore write ('auth_users'). Manual cleanup might be needed.`);
     }
     throw error; // Re-throw the original or wrapped error
   }
